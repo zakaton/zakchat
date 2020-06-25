@@ -1,0 +1,141 @@
+<html>
+    <head>
+        <title>Croquet</title>
+        <meta name='viewport' content='width=device-width, initial-scale=1.0 user-scalable=no'>
+
+        <!-- https://docs.agora.io/en/Video/start_call_web?platform=Web -->
+        <script src='https://cdn.agora.io/sdk/release/AgoraRTCSDK-3.1.0.js'></script>
+    </head>
+
+    <style>
+        html, body {
+            margin: 0; padding: 0;
+        }
+
+        #video {
+            transform: scaleX(-1);
+            width: 100%; height: 100%;
+        }
+
+        #cover {
+            width: 100%; height: 100%;
+            background-color: white;
+            position: absolute;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            text-align: center;
+            font-size: 32px;;
+            flex-direction: column;
+            overflow: hidden;
+            justify-content: center;
+            user-select: none;
+        }
+        
+        #video > div:not(.visible) {
+            display: none;
+        }
+    </style>
+
+    <body>
+        <div id='cover'>
+            <span><h1>Click to Join</h1></span>
+        </div>
+        <div id='video'></div>
+    </body>
+
+    <script>
+        if(location.protocol !== 'https:')
+            location.replace(`https:${location.href.substring(location.protocol.length)}`)
+
+        AgoraRTC.Logger.setLogLevel(AgoraRTC.Logger.NONE);
+        
+        const url = new URL(window.location);
+        const {searchParams} = url;
+        let channelName = ' ';
+        if(searchParams.has('channelName') && searchParams.get('channelName').length)
+            channelName = searchParams.get('channelName');
+
+        const appID = "150d223019864b108fc38c6f37612e79";
+        
+        const client = AgoraRTC.createClient({mode: 'rtc', codec: 'vp8'});
+
+        let stream;
+        const streams = [];
+        document.addEventListener('click', event => {
+            document.querySelector(`#cover`).remove();
+
+            client.init(appID, () => {
+                client.join(null, channelName, null, id => {
+                    stream = AgoraRTC.createStream({
+                        video: true,
+                        audio: true,
+                        mirror: false,
+                        streamID: id,
+                    });
+
+                    // https://docs.agora.io/en/Voice/API%20Reference/web/interfaces/agorartc.stream.html#setvideoprofile
+                    //stream.setVideoProfile("720p_2");
+
+                    // https://docs.agora.io/en/Voice/API%20Reference/web/interfaces/agorartc.stream.html#setaudioprofile
+                    //stream.setAudioProfile("high_quality");
+
+                    stream.init(() => {
+                        stream.getAudioLevel();
+                        
+                        const peer = document.createElement('div');
+                        peer.id = `peer-${stream.getId()}`;
+                        document.querySelector('#video').appendChild(peer);
+                        stream.play(peer.id);
+        
+                        streams.push(stream);
+        
+                        client.publish(stream);
+                    });
+                });
+            });
+        }, {once: true});
+
+        setInterval(() => {
+            const levels = streams.map(_stream => _stream.getAudioLevel());
+            let maxIndex = 0;
+            let maxLevel = 0;
+            levels.forEach((level, index) => {
+                if(level > maxLevel) {
+                    maxLevel = level;
+                    maxIndex = index;
+                }
+            });
+            
+            if(maxLevel > 0.30) {
+                document.querySelectorAll('.visible').forEach(div => div.classList.remove('visible'));
+                const _stream = streams[maxIndex];
+                const peer = document.querySelector(`#peer-${_stream.getId()}`);
+                peer.classList.add('visible');
+            }
+        }, 150);
+        
+
+        client.on('stream-added', event => client.subscribe(event.stream));
+        
+        client.on('stream-subscribed', event => {
+            const _stream = event.stream;
+            _stream.getAudioLevel();
+            streams.push(_stream);
+
+            const peer = document.createElement('div');
+            peer.id = `peer-${_stream.getId()}`;
+            document.querySelector('#video').appendChild(peer);
+            _stream.play(peer.id);
+        });
+        
+        client.on('peer-leave', event => {
+            const _stream = streams.find(stream => stream.getId() == event.uid);
+            if(_stream) {
+                streams.splice(streams.indexOf(_stream), 1);
+                _stream.stop();
+            }
+        });
+
+    </script>
+</html>

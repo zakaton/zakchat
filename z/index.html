@@ -1,0 +1,115 @@
+<html>
+    <head>
+        <title>Mixer</title>
+    </head>
+
+    <style>
+        #iframes {
+            width: 100%;
+            height: 100%;
+            display: flex;
+        }
+
+        @media (min-aspect-ratio: 3/2) {#iframes {flex-direction: row;}}
+        @media (max-aspect-ratio: 3/2) {#iframes {flex-direction: column;}}
+
+        iframe {
+            flex: 1;
+        }
+
+        iframe#camera {
+            
+        }
+
+        iframe#mixer {
+
+        }
+    </style>
+
+    <body>
+        <div id='iframes'>
+            <iframe onload='' id='camera' allow='camera;microphone;autoplay'></iframe>
+            <iframe onload='' id='mixer' allow='autoplay'></iframe>
+        </div>
+    </body>
+
+    <script data-script='channelNames'>
+        const url = new URL(window.location);
+        
+        let channelName = url.searchParams.get('c');
+        let mixerChannelName = url.searchParams.get('m');
+    </script>
+
+    <script data-script='iframes'>
+        const cameraIframe = document.querySelector('iframe#camera');
+        const mixerIframe = document.querySelector('iframe#mixer');
+
+        const setCameraPaused = (paused) => {
+            const cameraVideo = cameraIframe.contentDocument.querySelector('video');
+            if(cameraVideo) {
+                if(paused)
+                    cameraVideo.pause();
+                else
+                    cameraVideo.play();
+            }
+        };
+
+        const setMixerPaused = (paused) => {
+            const inputs = Array.from(mixerIframe.contentDocument.querySelectorAll('.input'));
+            inputs.forEach(input => {
+                const video = input.querySelector('video');
+                if(video) video.pause();
+            });
+            
+            const selectedInput = inputs.find(input => input.classList.contains('selected'));
+            if(selectedInput) {
+                const video = selectedInput.querySelector('video');
+                if(video) {
+                    if(paused)
+                        video.pause();
+                    else
+                        video.play();
+                }
+            }
+        }
+
+        const toggleMixer = () => {
+            const inputs = Array.from(mixerIframe.contentDocument.querySelectorAll('.input'));
+            const selectedIndex = inputs.findIndex(input => input.classList.contains('selected'));
+            
+            inputs[selectedIndex].classList.remove('selected');
+            const selectedVideo = inputs[selectedIndex].querySelector('video');
+            if(selectedVideo)
+                selectedVideo.pause();
+
+            if(!isNaN(selectedIndex)) {
+                const nextSelectedIndex = (selectedIndex+1) % inputs.length;
+                
+                inputs[nextSelectedIndex].classList.add('selected');
+                const nextSelectedVideo = inputs[nextSelectedIndex].querySelector('video');
+                if(nextSelectedVideo)
+                    nextSelectedVideo.play();
+            }
+        }
+
+        cameraIframe.addEventListener('load', event => {
+            cameraIframe.contentWindow.addEventListener('click', event => {
+                return;
+                setMixerPaused(true);
+                setCameraPaused(false);
+            });
+        })
+
+        mixerIframe.addEventListener('load', event => {
+            mixerIframe.contentWindow.addEventListener('click', event => {
+                return;
+                setCameraPaused(true);
+                setMixerPaused(false);
+                toggleMixer();
+            });
+        });
+
+        cameraIframe.src = `https://${location.host}/c?c=${channelName}&m=${mixerChannelName}`;
+        mixerIframe.src = `https://${location.host}/m?c=${channelName}&m=${mixerChannelName}`;
+    </script>
+</html>
