@@ -1,0 +1,367 @@
+<html>
+    <head>
+        <title>External Camera</title>
+        <meta name='viewport' content='width=device-width, initial-scale=1.0 user-scalable=no'>
+
+        <!-- https://docs.agora.io/en/Video/start_call_web?platform=Web -->
+        <script src='https://cdn.agora.io/sdk/release/AgoraRTCSDK-3.1.0.js'></script>
+
+        <meta charset="utf-8">
+        <script src="https://croquet.io/sdk/croquet-latest.min.js"></script>
+    </head>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #container {
+            display: flex;
+            flex-direction: column;
+
+            height: 100%;
+            width: 100%;
+        }
+        
+        select {
+            display: none;
+        }
+
+        #container > div {
+            flex: 1;
+            height: 100%;
+            width: 100%;
+            object-fit: contain;
+        }
+
+        #container video {
+            object-fit: contain;
+        }
+
+        #container.mirror video {
+            transform: scaleX(-1);
+        }
+
+        #cover {
+            width: 98%;
+            height: 98%;
+            background-color: white;
+            position: absolute;
+            z-index: 3;
+            display: flex;
+            align-items: center;
+            text-align: center;
+            font-size: 32px;;
+            flex-direction: column;
+            overflow: hidden;
+            justify-content: center;
+            user-select: none;
+        }
+
+        #cover span.hidden {
+            display: none;
+        }
+
+        
+        #toggleCamera {
+            font-size: 32px;
+            top: 20%;
+        }
+
+        #toggleCameraContainer {
+            width: 100%;
+            height: 20%;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: absolute;
+            position: absolute;
+            z-index: 2;
+        }
+    </style>
+
+    <script data-script='logger'>
+        AgoraRTC.Logger.setLogLevel(AgoraRTC.Logger.NONE);
+    </script>
+
+    <body>
+        <div id='cover'>
+            <span class='hidden'>Click to Enable Camera</span>
+        </div>
+        <div id='toggleCameraContainer'>
+            <button id='toggleCamera' onclick='toggleCamera()'>Switch Local Camera</button>
+        </div>
+        <div id='container' class='mirror'>
+            <select id='videoInputs'></select>
+            <div id='v'></div>
+        </div>
+    </body>
+
+    <script data-script='cover'>
+        const cover = document.querySelector('#cover');
+        const coverText = cover.querySelector('span');
+        document.addEventListener('clientjoin', event => {
+            coverText.classList.remove('hidden');
+        }, {once: true});
+    </script>
+
+    <script data-script='channelName'>
+        const {searchParams} = new URL(window.location);
+        let channelName = ' ';
+        if(searchParams.has('c') && searchParams.get('c').length)
+            channelName = searchParams.get('c');
+    </script>
+
+    <script data-script='userIndex'>
+        let userIndex = 0;
+        if(searchParams.has('i') && !isNaN(searchParams.get('i')))
+        userIndex = Number(searchParams.get('i'));
+    </script>
+
+    <script data-script='client'>
+        const appID = '150d223019864b108fc38c6f37612e79';
+        const client = AgoraRTC.createClient({mode: 'rtc', codec: 'vp8'});
+        document.addEventListener('croquetstartsession', event => {
+            client.init(appID, () => {
+                client.join(null, `${channelName}-${userIndex}`, view.viewId, id => {
+                    document.dispatchEvent(new Event('clientjoin'));
+                    document.addEventListener('click', event => cover.style.display = 'none', {once: true});
+                    document.addEventListener('click', event => getCameraAccess().then(() => ondevicechange()), {once: true});
+                });
+            });
+        }, {once: true});
+    </script>
+
+    <script data-script='updateStream'>
+        const container = document.querySelector(`#container`);
+        let localStream;
+        const updateStream = () => {
+            if(client.getConnectionState() == 'CONNECTED') {
+                if(!localStream) {
+                    localStream = window.localStream = AgoraRTC.createStream({
+                        video: true,
+                        cameraId: videoInputsSelect.value,
+
+                        audio: false,
+                        mirror: false,
+                    });
+
+                    localStream.setVideoProfile('480p_3');
+
+                    localStream.init(() => {
+                        client.publish(localStream, error => console.error(error));
+                        localStream.play('v', {muted: true, fit: 'contain'});
+                        if(view)
+                            view.setMirror();
+                    }, error => {
+                        console.error(error);
+                    });
+                }
+                else {
+                    localStream.switchDevice('video', videoInputsSelect.value, () => {
+                        if(view)
+                            view.setMirror();
+                    }, error => {
+                        console.error(error);
+                    });
+                }
+            }
+        }
+    </script>
+
+    <script data-script='mediaDevices'>
+        const videoInputsSelect = document.querySelector('select');
+
+        const stopStream = stream => stream.getTracks().forEach(track => track.stop());
+        const getCameraAccess = () => navigator.mediaDevices.getUserMedia({video: true}).then(stream => stopStream(stream));
+
+        let updatingdevices = false;
+        const ondevicechange = () => {
+            if(updatingdevices) return;
+            updatingdevices = true;
+
+            videoInputsSelect.innerHTML = '';
+
+            return navigator.mediaDevices.enumerateDevices().then(devices => devices.filter(device => device.kind == 'videoinput')).then(outputDevices => {
+                outputDevices.forEach(device => {
+                    const {deviceId, label} = device;
+                    const option = new Option(label, deviceId);
+                    videoInputsSelect.appendChild(option);
+                });
+            }).then(() => {
+                updateStream();
+                updatingdevices = false;
+            });
+        }
+
+        videoInputsSelect.addEventListener('change', event => {
+            updateStream();
+        });
+
+        const toggleCamera = () => {
+            videoInputsSelect.selectedIndex = (videoInputsSelect.selectedIndex+1) % videoInputsSelect.childElementCount;
+            videoInputsSelect.dispatchEvent(new Event('change'));
+        }
+
+        navigator.mediaDevices.addEventListener('devicechange', () => ondevicechange());
+    </script>
+
+    <script data-script='croquet'>
+        class Model extends Croquet.Model {
+            init() {
+                super.init();
+
+                this.users = [];
+
+                this.presentationMode = false;
+
+                this.subscribe(this.sessionId, 'peer-join', this.onPeerJoin);
+                this.subscribe(this.sessionId, 'view-exit', this.onViewExit);
+
+                this.subscribe(this.sessionId, 'camera-join', this.onCameraJoin);
+
+                this.subscribe(this.sessionId, 'camera-mirror', this.onCameraMirror);
+
+                this.subscribe(this.sessionId, 'set-presentation-mode', this.setPresentationMode);
+            }
+
+            setPresentationMode({presentationMode}) {
+                this.presentationMode = presentationMode;
+                this.publish(this.sessionId, 'on-presentation-mode');
+            }
+
+            cleanupUsers() {
+                if(this.users.every(user => user == undefined))
+                    this.users.length = 0;
+            }
+
+            onPeerJoin(viewId) {
+                this.cleanupUsers();
+
+                if(this.users.every(user => user.viewId !== viewId)) {
+                    this.users.push({
+                        viewId,
+                        cameras : [],
+                    });
+    
+                    this.publish(this.sessionId, 'on-peer-join', viewId);
+                }
+            }
+            onViewExit(viewId) {
+                const user = this.getUser(viewId);
+                
+                if(user) {
+                    //delete this.users[this.users.indexOf(user)];
+                    this.publish(this.sessionId, 'on-peer-exit', viewId);
+                }
+                else {
+                    const camera = this.getCamera(viewId);
+                    if(camera) {
+                        const cameraUser = this.users.find(user => user && user.cameras.includes(camera));
+                        if(cameraUser) {
+                            const cameraIndex = cameraUser.cameras.indexOf(camera);
+                            //delete cameraUser.cameras[cameraIndex];
+                            if(cameraUser.cameras.every(camera => camera == undefined))
+                                cameraUser.cameras.length = 0;
+                            this.publish(cameraUser.viewId, 'on-camera-exit', viewId);
+                        }
+                    }
+                }
+            }
+
+            onCameraJoin({cameraViewId, userViewId}) {                
+                const user = this.getUser(userViewId);
+
+                if(user) {
+                    if(!user.cameras.find(camera => camera.viewId == cameraViewId))
+                        user.cameras.push({
+                            viewId : cameraViewId,
+                            mirror : true,
+                        });
+                        
+                    this.publish(userViewId, 'on-camera-join', cameraViewId);
+                }
+            }
+            
+            onCameraMirror({cameraViewId, userViewId, mirror}) {
+                const camera = this.getCamera(cameraViewId);
+                if(camera) {
+                    camera.mirror = mirror;
+                    this.publish(userViewId, 'on-camera-mirror', cameraViewId);
+                }
+            }
+
+            getIndex(viewId) {
+                return this.users.findIndex(user => user !== undefined && user.viewId == viewId);
+            }
+            getUser(viewId) {
+                return this.users[this.getIndex(viewId)];
+            }
+
+            getCamera(viewId) {
+                let camera;
+                const user = this.users.some(user => {
+                    if(user) {
+                        camera = user.cameras.find(camera => camera !== undefined && camera.viewId == viewId);
+                        return camera;
+                    }
+                });
+                return camera;
+            }
+        }
+        Model.register();
+
+        class CameraView extends Croquet.View {
+            constructor(model) {
+                super(model);
+                this.model = model;
+
+                console.log(this.model.users);
+
+                this.subscribe(this.user.viewId, 'on-camera-join', viewId => {
+                    if(viewId == this.viewId) {
+                        document.dispatchEvent(new Event('croquetstartsession'));
+                    }
+                });
+            }
+
+            join() {
+                this.publish(this.sessionId, 'camera-join', {
+                    cameraViewId : this.viewId,
+                    userViewId : this.user.viewId,
+                });
+            }
+
+            get user() {
+                return this.model.users[userIndex];
+            }
+
+            setMirror() {
+                const mirror = !videoInputsSelect.children[videoInputsSelect.selectedIndex].innerText.toLowerCase().includes('back');
+                console.log(mirror);
+
+                if(mirror)
+                    container.classList.add('mirror');
+                else
+                    container.classList.remove('mirror');
+                                
+                this.publish(this.sessionId, 'camera-mirror', {
+                    cameraViewId : this.viewId,
+                    userViewId : this.user.viewId,
+                    mirror,
+                });
+            }
+        }
+
+        let view;
+        Croquet.App.root = false;
+        Croquet.startSession(`zakchat-${channelName}`, Model, CameraView)
+            .then(session => {
+                view = session.view;
+                view.join();
+            });
+    </script>
+</html>

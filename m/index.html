@@ -1,0 +1,230 @@
+<html>
+    <head>
+        <title>Mixer</title>
+
+        <meta name='viewport' content='width=device-width, initial-scale=1.0 user-scalable=no'>
+
+        <!-- https://docs.agora.io/en/Video/start_call_web?platform=Web -->
+        <script src='https://cdn.agora.io/sdk/release/AgoraRTCSDK-3.1.0.js'></script>
+
+        <meta charset="utf-8">
+        <script src="https://croquet.io/sdk/croquet-latest.min.js"></script>
+    </head>
+
+    <style>
+        #inputs {
+            display: grid;
+            width: 100%; height: 100%;
+        }
+
+        #inputs .input {
+            width: inherit;
+            height: inherit;
+        }
+
+        #inputs .input video {
+            width: inherit;
+            height: inherit;
+            object-fit: contain;
+            border: solid black;
+        }
+
+        #inputs .input:not(.selected) {
+            filter: grayscale(80%);
+        }
+    </style>
+
+    <body>
+        <div id='inputs'>
+            <template>
+                <div class='input'></div>
+            </template>
+        </div>
+    </body>
+
+    <script data-script='logger'>
+        //AgoraRTC.Logger.setLogLevel(AgoraRTC.Logger.NONE);
+    </script>
+
+    <script data-script='channelName'>
+        const {searchParams} = new URL(window.location);
+        let channelName = ' ';
+        if(searchParams.has('c') && searchParams.get('c').length)
+            channelName = searchParams.get('c');
+    </script>
+
+    <script data-script='mixerChannelName'>
+        let mixerChannelName = ' ';
+        if(searchParams.has('m') && searchParams.get('m').length)
+        mixerChannelName = searchParams.get('m');
+    </script>
+
+    <script data-script='inputs'>
+        const inputs = document.querySelector(`#inputs`);
+        window.addEventListener('resize', event => {
+            const width = inputs.clientWidth;
+            const height = inputs.clientHeight;
+
+            const aspectRatio = width/height;
+
+            let rows = 1;
+            let columns = 1;
+
+            let gridTemplateColumns = ``;
+            let gridTemplateRows = ``;
+
+            const numberOfInputs = inputs.querySelectorAll('.input:not(template)').length;
+
+            while(numberOfInputs > rows*columns) {
+                const aspectRatios = {
+                    row : Math.abs(aspectRatio - columns/(rows+1)),
+                    column : Math.abs(aspectRatio - (columns+1)/rows),
+                };
+
+                if(aspectRatios.row < aspectRatios.column)
+                    rows++
+                else
+                    columns++;
+            }
+
+            gridTemplateColumns = `repeat(${columns}, 1fr)`;
+            gridTemplateRows = `repeat(${rows}, 1fr)`;
+
+            const length = Math.floor(Math.min(width/columns, height/rows));
+            const lengthString = `${length}px`;
+
+            gridTemplateColumns = gridTemplateColumns.replace(/1fr/g, lengthString);
+            gridTemplateRows = gridTemplateRows.replace(/1fr/g, lengthString);
+            
+            inputs.style.gridTemplateRows = gridTemplateRows;
+            inputs.style.gridTemplateColumns = gridTemplateColumns;
+        });
+    </script>
+
+    <script data-script='addInput'>
+        const inputTemplate = inputs.querySelector('template');
+
+        let mixerView;
+        const addInput = (stream) => {
+            const input = inputTemplate.content.cloneNode(true).querySelector('.input');
+
+            const id = stream.getId();
+            input.style.order = id.toString().substr(0, 9);
+            input.dataset.id = id;
+            input.id = id.toString();
+            
+            inputs.appendChild(input);
+            stream.play(input.id, {muted: true, fit: 'contain'});
+
+            stream.stream.oninactive = () => {
+                input.remove();
+            }
+
+            input.addEventListener('click', event => {
+                if(mixerView)
+                    mixerView.setStreamId(stream.getId());
+            });
+
+            window.dispatchEvent(new Event('resize'));
+            if(mixerView)
+                mixerView.onUpdateStreamId();
+        }
+    </script>
+
+    <script data-script='client'>
+        const appID = '150d223019864b108fc38c6f37612e79';
+        const client = AgoraRTC.createClient({mode: 'rtc', codec: 'vp8'});
+        
+        client.on('stream-added', event => client.subscribe(event.stream));
+        client.on('stream-subscribed', event => addInput(event.stream));
+        
+        client.init(appID, () => {
+            client.join(null, mixerChannelName, null, id => {
+
+            });
+        });
+    </script>
+
+    <script data-script='croquet-active-speaker'>
+        class ChatModel extends Croquet.Model {
+                    init({channelName}) {
+                        super.init();
+
+                        this.channelName = channelName;
+                        this.subscribe('active-speaker', 'set', this.onSetActiveSpeaker);
+                    }
+
+                    onSetActiveSpeaker({activeSpeakerId}) {
+                        if(this.activeSpeakerId !== activeSpeakerId) {
+                            this.activeSpeakerId = activeSpeakerId;
+                            this.publish('active-speaker', 'update');
+                        }
+                    }
+                }
+                ChatModel.register();
+    </script>
+
+    <script data-script='croquet'>                
+        class MixerModel extends Croquet.Model {
+                        init({channelName, mixerChannelName}) {
+                            super.init();
+                            this.streamId = null;
+
+                            this.mirror = {};
+
+                            this.channelName = channelName;
+                            this.mixerChannelName = mixerChannelName;
+                            
+                            this.length = 200;
+
+                            this.subscribe(this.sessionId, 'setMirror', this.setMirror);
+                            this.subscribe(this.sessionId, 'setStreamId', this.setStreamId);
+                            this.subscribe(this.sessionId, 'setLength', this.setLength);
+                        }
+
+                        setStreamId({streamId}) {
+                            this.streamId = streamId;
+                            this.publish(this.sessionId, 'onUpdateStreamId');
+                        }
+
+                        setLength({length}) {
+                            this.length = length;
+                            this.publish(this.sessionId, 'onUpdateLength');
+                        }
+
+                        setMirror({streamId, mirror}) {
+                            this.mirror[streamdId] = mirror;
+                            this.publish(this.sessionId, 'onUpdateMirror');
+                        }
+                    }
+                    MixerModel.register();
+
+        class MixerView extends Croquet.View {
+            constructor(model) {
+                super(model);
+                this.model = model;
+
+                this.subscribe(this.sessionId, 'onUpdateStreamId', this.onUpdateStreamId);
+                this.onUpdateStreamId();
+            }
+
+            setStreamId(streamId) {
+                this.publish(this.sessionId, 'setStreamId', {streamId});
+            }
+
+            onUpdateStreamId() {
+                document.querySelectorAll('.input.selected').forEach(input => input.classList.remove('selected'));
+                const input = document.querySelector(`.input[data-id="${this.model.streamId}"]`);
+                if(input)
+                    input.classList.add('selected');
+            }
+        }
+
+        Croquet.App.root = false;
+        Croquet.startSession(`agora.io-mixer`, MixerModel, MixerView, {options: {channelName, mixerChannelName}})
+            .then(session => {
+                const {view} = session;
+                window.mixerView = mixerView = view;
+            });
+    </script>
+</html>
