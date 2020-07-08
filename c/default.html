@@ -39,7 +39,7 @@
             object-fit: contain;
         }
 
-        #container.mirror video {
+        #container[data-mirror] video {
             transform: scaleX(-1);
         }
 
@@ -57,10 +57,6 @@
             overflow: hidden;
             justify-content: center;
             user-select: none;
-        }
-
-        #cover span.hidden {
-            display: none;
         }
 
         
@@ -88,13 +84,11 @@
     </script>
 
     <body>
-        <div id='cover'>
-            <span class='hidden'>Click to Enable Camera</span>
-        </div>
+        <div id='cover'>Click to Enable Camera</div>
         <div id='toggleCameraContainer'>
-            <button id='toggleCamera' onclick='toggleCamera()'>Switch Local Camera</button>
+            <button id='toggleCamera' onclick='toggleCamera()'>Toggle Camera</button>
         </div>
-        <div id='container' class='mirror'>
+        <div id='container'>
             <select id='videoInputs'></select>
             <div id='v'></div>
         </div>
@@ -102,10 +96,6 @@
 
     <script data-script='cover'>
         const cover = document.querySelector('#cover');
-        const coverText = cover.querySelector('span');
-        document.addEventListener('clientjoin', event => {
-            coverText.classList.remove('hidden');
-        }, {once: true});
     </script>
 
     <script data-script='channelName'>
@@ -115,29 +105,27 @@
             channelName = searchParams.get('c');
     </script>
 
-    <script data-script='userIndex'>
-        let userIndex = 0;
-        if(searchParams.has('i') && !isNaN(searchParams.get('i')))
-        userIndex = Number(searchParams.get('i'));
+    <script data-script='mixerChannelName'>
+        let mixerChannelName = ' ';
+        if(searchParams.has('m') && searchParams.get('m').length)
+        mixerChannelName = searchParams.get('m');
     </script>
 
     <script data-script='client'>
         const appID = '150d223019864b108fc38c6f37612e79';
         const client = AgoraRTC.createClient({mode: 'rtc', codec: 'vp8'});
-        document.addEventListener('croquetstartsession', event => {
-            client.init(appID, () => {
-                client.join(null, `${channelName}-${userIndex}`, view.viewId, id => {
-                    document.dispatchEvent(new Event('clientjoin'));
-                    document.addEventListener('click', event => cover.style.display = 'none', {once: true});
-                    document.addEventListener('click', event => getCameraAccess().then(() => ondevicechange()), {once: true});
-                });
+        client.init(appID, () => {
+            client.join(null, mixerChannelName, null, id => {
+                document.addEventListener('click', event => cover.style.display = 'none', {once: true});
+                document.addEventListener('click', event => getCameraAccess().then(() => ondevicechange()), {once: true});
             });
-        }, {once: true});
+        });
     </script>
 
     <script data-script='updateStream'>
         const container = document.querySelector(`#container`);
         let localStream;
+        let view;
         const updateStream = () => {
             if(client.getConnectionState() == 'CONNECTED') {
                 if(!localStream) {
@@ -209,159 +197,89 @@
         navigator.mediaDevices.addEventListener('devicechange', () => ondevicechange());
     </script>
 
-    <script data-script='croquet'>
-        class Model extends Croquet.Model {
-            init() {
-                super.init();
+    <script data-script='croquet0'>
+        class ChatModel extends Croquet.Model {
+                    init({channelName}) {
+                        super.init();
 
-                this.users = [];
+                        this.channelName = channelName;
+                        this.subscribe('active-speaker', 'set', this.onSetActiveSpeaker);
+                    }
 
-                this.presentationMode = false;
-
-                this.subscribe(this.sessionId, 'peer-join', this.onPeerJoin);
-                this.subscribe(this.sessionId, 'view-exit', this.onViewExit);
-
-                this.subscribe(this.sessionId, 'camera-join', this.onCameraJoin);
-
-                this.subscribe(this.sessionId, 'camera-mirror', this.onCameraMirror);
-
-                this.subscribe(this.sessionId, 'set-presentation-mode', this.setPresentationMode);
-            }
-
-            setPresentationMode({presentationMode}) {
-                this.presentationMode = presentationMode;
-                this.publish(this.sessionId, 'on-presentation-mode');
-            }
-
-            cleanupUsers() {
-                if(this.users.every(user => user == undefined))
-                    this.users.length = 0;
-            }
-
-            onPeerJoin(viewId) {
-                this.cleanupUsers();
-
-                if(this.users.every(user => user.viewId !== viewId)) {
-                    this.users.push({
-                        viewId,
-                        cameras : [],
-                    });
-    
-                    this.publish(this.sessionId, 'on-peer-join', viewId);
-                }
-            }
-            onViewExit(viewId) {
-                const user = this.getUser(viewId);
-                
-                if(user) {
-                    //delete this.users[this.users.indexOf(user)];
-                    this.publish(this.sessionId, 'on-peer-exit', viewId);
-                }
-                else {
-                    const camera = this.getCamera(viewId);
-                    if(camera) {
-                        const cameraUser = this.users.find(user => user && user.cameras.includes(camera));
-                        if(cameraUser) {
-                            const cameraIndex = cameraUser.cameras.indexOf(camera);
-                            //delete cameraUser.cameras[cameraIndex];
-                            if(cameraUser.cameras.every(camera => camera == undefined))
-                                cameraUser.cameras.length = 0;
-                            this.publish(cameraUser.viewId, 'on-camera-exit', viewId);
+                    onSetActiveSpeaker({activeSpeakerId}) {
+                        if(this.activeSpeakerId !== activeSpeakerId) {
+                            this.activeSpeakerId = activeSpeakerId;
+                            this.publish('active-speaker', 'update');
                         }
                     }
                 }
-            }
+                ChatModel.register();
+    </script>
 
-            onCameraJoin({cameraViewId, userViewId}) {                
-                const user = this.getUser(userViewId);
+    <script data-script='croquet'>
+        class MixerModel extends Croquet.Model {
+                        init({channelName, mixerChannelName}) {
+                            super.init();
+                            this.streamId = null;
 
-                if(user) {
-                    if(!user.cameras.find(camera => camera.viewId == cameraViewId))
-                        user.cameras.push({
-                            viewId : cameraViewId,
-                            mirror : true,
-                        });
-                        
-                    this.publish(userViewId, 'on-camera-join', cameraViewId);
-                }
-            }
-            
-            onCameraMirror({cameraViewId, userViewId, mirror}) {
-                const camera = this.getCamera(cameraViewId);
-                if(camera) {
-                    camera.mirror = mirror;
-                    this.publish(userViewId, 'on-camera-mirror', cameraViewId);
-                }
-            }
+                            this.mirror = {};
 
-            getIndex(viewId) {
-                return this.users.findIndex(user => user !== undefined && user.viewId == viewId);
-            }
-            getUser(viewId) {
-                return this.users[this.getIndex(viewId)];
-            }
+                            this.channelName = channelName;
+                            this.mixerChannelName = mixerChannelName;
+                            
+                            this.length = 200;
 
-            getCamera(viewId) {
-                let camera;
-                const user = this.users.some(user => {
-                    if(user) {
-                        camera = user.cameras.find(camera => camera !== undefined && camera.viewId == viewId);
-                        return camera;
+                            this.subscribe(this.sessionId, 'setMirror', this.setMirror);
+                            this.subscribe(this.sessionId, 'setStreamId', this.setStreamId);
+                            this.subscribe(this.sessionId, 'setLength', this.setLength);
+                        }
+
+                        setStreamId({streamId}) {
+                            this.streamId = streamId;
+                            this.publish(this.sessionId, 'onUpdateStreamId');
+                        }
+
+                        setLength({length}) {
+                            this.length = length;
+                            this.publish(this.sessionId, 'onUpdateLength');
+                        }
+
+                        setMirror({streamId, mirror}) {
+                            if(streamId == undefined) return;
+
+                            this.mirror[streamId] = mirror;
+                            this.publish(this.sessionId, 'onUpdateMirror');
+                        }
                     }
-                });
-                return camera;
-            }
-        }
-        Model.register();
+                    MixerModel.register();
 
-        class CameraView extends Croquet.View {
+        class MixerView extends Croquet.View {
             constructor(model) {
                 super(model);
                 this.model = model;
-
-                console.log(this.model.users);
-
-                this.subscribe(this.user.viewId, 'on-camera-join', viewId => {
-                    if(viewId == this.viewId) {
-                        document.dispatchEvent(new Event('croquetstartsession'));
-                    }
-                });
-            }
-
-            join() {
-                this.publish(this.sessionId, 'camera-join', {
-                    cameraViewId : this.viewId,
-                    userViewId : this.user.viewId,
-                });
-            }
-
-            get user() {
-                return this.model.users[userIndex];
             }
 
             setMirror() {
                 const mirror = !videoInputsSelect.children[videoInputsSelect.selectedIndex].innerText.toLowerCase().includes('back');
-                console.log(mirror);
-
-                if(mirror)
-                    container.classList.add('mirror');
-                else
-                    container.classList.remove('mirror');
-                                
-                this.publish(this.sessionId, 'camera-mirror', {
-                    cameraViewId : this.viewId,
-                    userViewId : this.user.viewId,
+                if(mirror) {
+                    container.dataset.mirror = '';
+                }
+                else {
+                    delete container.dataset.mirror;
+                }
+                this.publish(this.sessionId, 'setMirror', {
+                    streamId : localStream.getId(),
                     mirror,
                 });
             }
         }
 
-        let view;
         Croquet.App.root = false;
-        Croquet.startSession(`zakchat-${channelName}`, Model, CameraView)
+        Croquet.startSession(`agora.io-mixer`, MixerModel, MixerView, {options: {channelName, mixerChannelName}})
             .then(session => {
                 view = session.view;
-                view.join();
+                if(localStream)
+                    view.setMirror();
             });
     </script>
 </html>

@@ -1,0 +1,63 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        <script src="https://croquet.io/sdk/croquet-latest.min.js"></script>
+    </head>
+
+    <body>
+        
+    </body>
+
+    <script>
+        class Model extends Croquet.Model {
+            init(options) {
+                super.init();
+
+                this.options = options;
+
+                this.subscribe(this.sessionId, 'view-join', this.onViewJoin);
+                this.subscribe(this.sessionId, 'view-exit', this.onViewExit);
+
+                this.subscribe(this.sessionId, 'greet', this.onGreet);
+            }
+
+            onViewJoin(viewId) {
+                console.log(viewId, 'joined');
+            }
+
+            onViewExit(viewId) {
+                console.log(viewId, 'exit');
+            }
+
+            onGreet(viewId) {
+                console.log('bye', viewId);
+            }
+        }
+        Model.register();
+
+        class View extends Croquet.View {
+            constructor(model) {
+                super(model);
+                this.model = model;
+
+                console.log('view constructor');
+            }
+
+            greet() {
+                this.publish(this.sessionId, 'greet', this.viewId);
+            }
+        }
+
+        let session;
+        Croquet.Session.join('zakchat/1', Model, View, {
+            options: {hello : 'world'}
+        }).then(_session => {
+            console.log('session started');
+            session = _session;
+
+            window.addEventListener('unload', event => {
+                session.view.greet();
+            });
+        });
+    </script>
+</html>
