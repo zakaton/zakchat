@@ -1379,7 +1379,7 @@
                         const qrcode = document.querySelector('#qrcode');
 
                         document.addEventListener('croquetstartsession', event => {
-                            const qrcodeURL = `https://${location.host}/c?c=${channelName}&i=${view.index}`;
+                            const qrcodeURL = `https://${location.host + location.pathname}/c?c=${channelName}&i=${view.index}`;
                             new QRCode(qrcode, {
                                 text: qrcodeURL,
                                 width: 250,
@@ -1388,7 +1388,7 @@
                                 colorLight : "#ffffff",
                                 correctLevel : QRCode.CorrectLevel.H,
                             });
-                            qrcode.href = qrcodeURL;
+                            //qrcode.href = qrcodeURL;
                             qrcode.title = '';
                         }, {once: true});
                     </script>
