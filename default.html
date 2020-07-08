@@ -1,5 +1,6 @@
 <html>
     <head>
+        <title>Croquet Video Chat</title>
         <meta name='viewport' content='width=device-width, initial-scale=1.0'>
 
         <!-- https://docs.agora.io/en/Video/start_call_web?platform=Web -->
@@ -34,6 +35,13 @@
                     this.video.onloadedmetadata = () => this.updateVideoDimensions();
                     this.video.srcObject = stream;
                     this.video.play();
+
+                    /*
+                    window.addEventListener('load', event => {
+                        this.video.style.display = 'none';
+                        document.body.appendChild(this.video);
+                    });
+                    */
 
                     this.alphaTransitionTime = 250;
 
@@ -203,7 +211,7 @@
     </script>
 
     <script data-script='StreamMixer'>
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const _AudioContext = window.AudioContext || window.webkitAudioContext;
         let mixerView;
         class StreamMixer {
             constructor() {
@@ -223,7 +231,7 @@
                 });
                 */
 
-                this.audioContext = new AudioContext();
+                this.audioContext = new _AudioContext();
                 document.addEventListener('click', () => this.audioContext.resume(), {once: true});
                 this.mediaStreamDestination = this.audioContext.createMediaStreamDestination();
 
@@ -234,8 +242,12 @@
                 this.startDrawing();
             }
 
+            get length() {
+                return Math.max(this.canvas.width, this.canvas.height);
+            }
+
             addCanvas(canvas) {
-                canvas.width = canvas.height = this.length;
+                canvas.width = canvas.height = this.canvas.length;
                 this._canvases.push({
                     canvas,
                     context : canvas.getContext('2d'),
@@ -260,7 +272,7 @@
             }
 
             get length() {
-                return Math.max(this.canvas.width, this.canvas.height);
+                return this._length;
             }
             set length(length) {
                 const filter = this.canvasContext.filter;
@@ -388,88 +400,6 @@
 
     <script data-script='streamMixer'>
         const streamMixer = new StreamMixer();
-        document.addEventListener('localstreams', event => {
-            if(localStreams.video) {
-                streamMixer.addStream(localStreams.video);
-
-                streamMixer.setAlpha(localStreams.video, 1);
-                streamMixer.soloVideo(localStreams.video);
-            }
-
-            if(localStreams.audio) {
-                streamMixer.addStream(localStreams.audio);
-
-                streamMixer.setGain(localStreams.audio, 1);
-                streamMixer.soloAudio(localStreams.audio);
-            }
-        });
-        document.addEventListener('mixer-stream-subscribed', event => {
-            const _stream = event.detail.stream;
-            streamMixer.addStream(_stream.stream);
-            streamMixer.setAlpha(_stream.stream, 1);
-            streamMixer.soloVideo(_stream.stream);
-            navigator.mediaDevices.dispatchEvent(new CustomEvent('devicechange', {
-                detail : {stream: _stream},
-            }));
-        });
-        document.addEventListener('mixer-stream-oninactive', event => {
-            const _stream = event.detail.stream;
-            streamMixer.removeStream(_stream.stream);
-
-            videoSelect.selectedIndex = 0;
-
-            navigator.mediaDevices.dispatchEvent(new CustomEvent('devicechange', {
-                detail : {selectedIndex : 0},
-            }));
-        });
-    </script>
-
-    <script data-script='stream'>
-        let stream;
-        document.addEventListener('croquetstartsession', event => {
-            stream = AgoraRTC.createStream({
-                streamID: view.viewId,
-
-                audio: true,
-                audioSource : streamMixer.audioStream.getAudioTracks()[0],
-
-                video: true,
-                videoSource: streamMixer.videoStream.getVideoTracks()[0],
-
-                mirror: false,
-            });
-
-            stream.init(() => document.dispatchEvent(new CustomEvent('stream', {
-                detail : {stream},
-            })));
-        });
-    </script>
-
-    <script data-script='localStreams'>
-        const stopStream = (stream) => {
-            if(stream)
-                stream.getTracks().forEach(track => track.stop());
-        };
-
-        const localStreams = {
-            video : null,
-            audio : null,
-        }
-        document.addEventListener('croquetstartsession', event => {
-            document.addEventListener('click', event => {
-                navigator.mediaDevices.getUserMedia({video: true, audio: true})
-                    .then(mediaStream => {
-                        stopStream(mediaStream);
-
-                        navigator.mediaDevices.dispatchEvent(new Event('devicechange'));
-
-                        document.addEventListener('devicechange', event => {
-                            videoSelect.dispatchEvent(new Event('input'));
-                            audioSelect.dispatchEvent(new Event('input'));
-                        }, {once: true});
-                    });
-            }, {once: true});
-        });
     </script>
 
     <script data-script='channelName'>
@@ -482,1153 +412,426 @@
 
     <script data-script='appID'>
         const appID = '150d223019864b108fc38c6f37612e79';
-    </script>
-
-    <script data-script='client'>
         const client = AgoraRTC.createClient({mode: 'rtc', codec: 'vp8'});
-        client.on('stream-added', event => client.subscribe(event.stream));
-        client.on('stream-subscribed', event => {
-            document.dispatchEvent(new CustomEvent('stream-subscribed', {
-                detail : {stream : event.stream},
-            }));
-        });
-        client.on('peer-leave', event => {
-            document.dispatchEvent(new CustomEvent('peer-leave', {
-                detail : {stream : event.stream},
-            }));
-        });
-
-        client.on('mute-audio', event => {
-            document.dispatchEvent(new CustomEvent('mute-audio', {
-                detail : {id : event.uid}
-            }));
-        });
-        client.on('unmute-audio', event => {
-            document.dispatchEvent(new CustomEvent('unmute-audio', {
-                detail : {id : event.uid}
-            }));
-        });
-
-        client.on('mute-video', event => {
-            document.dispatchEvent(new CustomEvent('mute-video', {
-                detail : {id : event.uid}
-            }));
-        });
-        client.on('unmute-video', event => {
-            document.dispatchEvent(new CustomEvent('unmute-video', {
-                detail : {id : event.uid}
-            }));
-        });
-
-        document.addEventListener('stream', event => {
-            client.init(appID, () => {
-                client.join(null, channelName, view.viewId, viewId => {
-                    document.dispatchEvent(new Event('join'));
-                    client.publish(stream);
-                });
-            });
-        }, {once: true});
-    </script>
-
-    <script data-script='mixerClient'>
-        let mixerChannelName;
-        const mixerClientStreams = [];
-
-        const mixerClient = AgoraRTC.createClient({mode: 'rtc', codec: 'vp8'});
-        mixerClient.on('stream-added', event => mixerClient.subscribe(event.stream));
-        mixerClient.on('stream-subscribed', event => {
-            mixerClientStreams.push(event.stream);
-
-            event.stream.stream.oninactive = () => {
-                const index = mixerClientStreams.indexOf(event.stream);
-                delete mixerClientStreams[index];
-
-                document.dispatchEvent(new CustomEvent('mixer-stream-oninactive', {
-                    detail : {stream : event.stream},
-                }));
-            }
-
-            document.dispatchEvent(new CustomEvent('mixer-stream-subscribed', {
-                detail : {stream : event.stream},
-            }));
-        });
-
-        mixerClient.on('peer-leave', event => {
-            if(!MediaStream.prototype.hasOwnProperty('oninactive')) {
-                const id = event.uid;
-                const _stream = mixerClientStreams.find(_stream => _stream.getId() == id);
-                if(_stream)
-                    _stream.stream.oninactive();
-            }
-
-            document.dispatchEvent(new CustomEvent('mixer-peer-leave', {
-                detail : {stream : event.stream},
-            }));
-        });
-
-        document.addEventListener('croquetstartsession', event => {
-            mixerChannelName = `${channelName}-${view.index}`;
-            mixerClient.init(appID, () => {
-                document.addEventListener('joinmixerclient', event => {
-                    if(mixerClient.getConnectionState() == 'DISCONNECTED') {
-                        mixerClient.join(null, mixerChannelName, view.viewId, viewId => {
-                            document.dispatchEvent(new Event('mixerclientjoin'));
-                        });
-                    }
-                });
-                document.addEventListener('leavemixerclient', event => {
-                    if(mixerClient.getConnectionState() == 'CONNECTED') {
-                        mixerClient.leave(() => {
-                            document.dispatchEvent(new Event('mixerclientleave'));
-                        });
-                    }
-                });
-            });
-        });
     </script>
 
     <body>
-        <style data-style='body'>
-            body {
-                margin: 0; padding: 0;
+        <style>
+            #cover {
+                width: 98%;
+                height: 98%;
+                background-color: white;
+                position: absolute;
+                z-index: 3;
+                display: flex;
+                align-items: center;
+                text-align: center;
+                font-size: 32px;;
+                flex-direction: column;
+                overflow: hidden;
+                justify-content: center;
+                user-select: none;
             }
         </style>
-
         <div id='cover'>
-            <style data-style='cover'>
-                #cover {
-                    width: 100%; height: 100%;
-                    position: absolute; z-index: 2;
-                    
-                    display: flex; flex-direction: column;
-                    justify-content: center; text-align: center;
-
-                    user-select: none;
-
-                    background-color: white;
-                }
-
-                #coverText[data-hidden] {
-                    display: none;
-                }
-            </style>
-
-            <h1 id='coverText' data-hidden>Click to Join</h1>
-
-            <script data-script='cover'>
-                const cover = document.querySelector('#cover');
-                const coverText = document.querySelector('#coverText');
-                document.addEventListener('croquetstartsession', event => {
-                    coverText.removeAttribute('data-hidden');
-                    document.addEventListener('click', event => {
-                        cover.remove();
-                    }, {once: true});
-                });
-            </script>
+            Click to Join
         </div>
 
-        <div id='ui' data-hidden>
-            <style data-style='ui'>
-                #ui {
-                    width: 100%; height: 100%;
-                    display: flex;
-                    align-items: stretch;
+        <script data-script='cover'>
+            const cover = document.querySelector('#cover');
+
+            document.addEventListener('click', event => {
+                cover.style.display = 'none';
+            }, {once: true});
+        </script>
+
+        <style>
+            #ui {
+                display: flex;
+                width: 100%; height: 100%;
+                justify-content: center;
+                align-items: center;
+                align-content: center;
+            }
+
+            @media (min-aspect-ratio: 3/2) {#ui {flex-direction: row}}
+            @media (max-aspect-ratio: 3/2) {#ui {flex-direction: column-reverse}}
+        </style>
+        
+        <div id='ui' data-mirror>
+            <style>
+                #peers {
+                    display: grid;
+                    justify-content: center; align-items: center;
+                    grid-auto-flow: dense;
+                    flex: 1;
+                }
+                
+                .peer, #activePeer {
+                    position: relative;
                 }
 
-                #ui[data-hidden] {
+                #activePeer {
+                    display: none;
+                    grid-row: active-row;
+                    grid-column: active-column;
+                }
+
+                .peer.mute-audio video, .peer.mute-audio canvas.video {filter: grayscale(100%)}
+
+                .peer.mute-video video, .peer.mute-video canvas.video, #activePeer.mute-video video, #activePeer.mute-video canvas.video {
                     display: none;
                 }
 
-                @media (min-aspect-ratio: 4/3) {#ui {flex-direction: row-reverse}}
-                @media (max-aspect-ratio: 4/3) {#ui {flex-direction: column}}
+                #ui[data-mirror] #activePeer canvas, #ui[data-mirror] .peer canvas.video {
+                    transform: scaleX(-1);
+                }
+
+                .peer, #activePeer {
+                    width: 100%;
+                    height: 100%;
+                }
+                .peer video, #activePeer video, .peer canvas.video, #activePeer canvas.video {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain !important;
+                }
+
+                #activePeer:not([data-canvas]) canvas.video {
+                    display: none;
+                }
+                #activePeer[data-canvas] video {
+                    display: none;
+                }
+
+                canvas.waveform {
+                    position: absolute; z-index: 2;
+                    width: 100%;
+                    height: 20%;
+                    bottom: 0;
+                    -webkit-mask-image: linear-gradient(to right, transparent, black, transparent);
+                    mask-image: linear-gradient(to right, transparent, black, transparent);
+                }
             </style>
 
-            <script data-script='ui'>
-                const ui = document.querySelector('#ui');
-                document.addEventListener('croquetstartsession', event => {
-                    document.addEventListener('click', event => {
-                        ui.removeAttribute('data-hidden');
-                        window.dispatchEvent(new Event('resize'));
-                    }, {once: true});
-                });
-            </script>
-
-            <div id='profile'>
-                <style data-style='profile'>
-                    #profile {
-                        background-color: lightgreen;
-                        flex: 1;
-
-                        display: flex;
-                        justify-content: start;
-                        align-items: stretch;
-                        align-content: center;                        
-                    }
-
-                    @media (min-aspect-ratio: 4/3) {#profile {
-                        flex-direction: column;
-                        max-width: 100px;
-                    }}
-                    @media (max-aspect-ratio: 4/3) {#profile {
-                        flex-direction: row;
-                        max-height: 100px;
-                    }}
-
-                    #muteAudio, #muteVideo, #toggleSettings {
-                        flex: 1;
-                        user-select: none;
-                        cursor: pointer;
-                        display: flex;
-                        flex-direction: row;
-                        justify-content: center;
-                    }
-
-                    #muteAudio span, #muteVideo span, #toggleSettings span {
-                        text-align: center;
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: center;
-                    }
-                </style>
-
-                <div id='output' class='mirror'>
-                    <style data-style='output'>
-                        #output {
-                            flex: 1;
-                            position: relative;
-
-                            max-width: 100px;
-                            max-height: 100px;
-                        }
-
-                        #output canvas.video {
-                            object-fit: contain;
-                            width: 100%;
-                            height: 100%;
-                        }
-
-                        #output.mute-video canvas.video {
-                            opacity: 1;
-                        }
-
-                        #output.mirror canvas.video {
-                            transform: scaleX(-1);
-                        }
-                    </style>
-
+            <div id='peers'>
+                <div id='activePeer' data-video>
                     <canvas class='waveform'></canvas>
-                    <canvas class='video' width='200' height='200' id='outputCanvas'></canvas>
-                    <audio id='outputAudio' muted playsinline autoplay></audio>
-
-                    <script data-script='output'>
-                        const output = document.querySelector('#output');
-                        output.addEventListener('click', event => {
-                            cycleVideo.dispatchEvent(new Event('click'));
-                        });
-                        
-                        const outputCanvas = document.querySelector('#outputCanvas');
-                            streamMixer.addCanvas(outputCanvas);
-
-                        const outputCanvasWaveform = output.querySelector('canvas.waveform');
-                        const outputCanvasWaveformContext = outputCanvasWaveform.getContext('2d');
-
-                        const outputAudio = document.querySelector('#outputAudio');
-                            outputAudio.srcObject = streamMixer.audioStream.clone();
-                            document.addEventListener('click', event => outputAudio.play(), {once: true});
-
-                        document.addEventListener('croquetstartsession', event => {
-                            document.addEventListener('mirror', event => {
-                                const {mirror} = event.detail;
-                                if(mirror)
-                                    output.classList.add('mirror');
-                                else
-                                    output.classList.remove('mirror');
-                            });
-                        }, {once: true});
-                    </script>
-                </div>
-
-                <style data-style='muteAudio'>
-                    #muteAudio {
-                        
-                    }
-                </style>
-                <div id='muteAudio'>
-                    <span>mute</span>
-                </div>
-                <script data-script='muteAudio'>
-                    const muteAudioButton = document.querySelector('#muteAudio');
-                    document.addEventListener('stream', event => {
-                        muteAudioButton.addEventListener('click', event => {
-                            const muted = (event.detail.muted !== undefined)?
-                                event.detail.muted :
-                                stream.isAudioOn();
-                                                        
-                            if(muted)
-                                stream.muteAudio();
-                            else
-                                stream.unmuteAudio();
-                            
-                            if(event.isTrusted) {
-                                if(!muted)
-                                    testAudioButton.dispatchEvent(new CustomEvent('click', {
-                                        detail : {muted : !muted},
-                                    }));
-                            }
-                            
-                            muteAudioButton.querySelector('span').innerText = muted?
-                                'unmute':
-                                'mute';
-                            
-                            if(muted)
-                                document.dispatchEvent(new CustomEvent('mute-audio', {
-                                    detail : {id : stream.getId()}
-                                }));
-                            else
-                                document.dispatchEvent(new CustomEvent('unmute-audio', {
-                                    detail : {id : stream.getId()}
-                                }));
-                            
-                            if(muted)
-                                streamMixer.canvasContext.filter = 'grayscale(100%)';
-                            else
-                                streamMixer.canvasContext.filter = 'none';
-                            
-                            if(muted)
-                                output.classList.add('mute-audio');
-                            else
-                                output.classList.remove('mute-audio');
-
-                        });
-                    }, {once: true});
-                </script>
-
-                <style data-style='muteVideo'>
-                    #muteVideo {
-
-                    }
-                </style>
-                <div id='muteVideo'>
-                    <span>hide</span>
-                </div>
-                <script data-script='muteVideo'>
-                    const muteVideoButton = document.querySelector('#muteVideo');
-                    document.addEventListener('stream', event => {
-                        muteVideoButton.addEventListener('click', event => {
-                            const muted = (event.detail.muted !== undefined)?
-                                event.detail.muted:
-                                stream.isVideoOn();
-                            
-                            if(muted)
-                                stream.muteVideo();
-                            else
-                                stream.unmuteVideo();
-                            
-                            if(event.isTrusted) {
-
-                            }
-
-                            muteVideoButton.querySelector('span').innerText = muted?
-                                'show':
-                                'hide';
-
-                            if(muted)
-                                document.dispatchEvent(new CustomEvent('mute-video', {
-                                    detail : {id : stream.getId()}
-                                }));
-                            else
-                                document.dispatchEvent(new CustomEvent('unmute-video', {
-                                    detail : {id : stream.getId()}
-                                }));
-                            
-                            if(muted)
-                                output.classList.add('mute-video');
-                            else
-                                output.classList.remove('mute-video');
-                        });
-                    }, {once: true});
-                </script>
-
-                <style data-style='muteAudio'>
-                    #toggleSettings {
-                        
-                    }         
-                </style>
-                <div id='toggleSettings'>
-                    <span>settings</span>
-                </div>
-                <script data-script='toggleSettings'>
-                    const toggleSettingsButton = document.querySelector('#toggleSettings');
-                    toggleSettingsButton.addEventListener('click', event => {
-                        if(settings.hasAttribute('data-visible')) {
-                            settings.removeAttribute('data-visible');
-                            toggleSettingsButton.querySelector('span').innerText = 'settings';
-                        }
-                        else {
-                            settings.setAttribute('data-visible', '');
-                            toggleSettingsButton.querySelector('span').innerText = 'hide settings';
-                        }
-
-                        const intervalId = window.setInterval(() => {
-                            window.dispatchEvent(new Event('resize'));
-                        }, 10);
-
-                        setTimeout(() => {
-                            window.clearInterval(intervalId);
-                        }, 500);
-                    });
-                </script>
-            </div>
-
-            <div id='settings'>
-                <style data-style='settings'>
-                    #settings {
-                        background-color: salmon;
-                        flex: 0; transition: flex 0.5s;
-                        overflow: hidden;
-                        justify-content: center;
-                        
-                        display: flex;
-                    }
-
-                    @media (min-aspect-ratio: 4/3) {#settings {
-                        flex-direction: column;
-                        max-width: 200px; width: 200px;
-                    }}
-                    @media (max-aspect-ratio: 4/3) {#settings {
-                        flex-direction: row;
-                        max-height: 200px; height: 200px;
-                    }}
-
-                    #settings[data-visible] {
-                        flex: 1;
-                    }
-
-                    #cycleVideo, #cycleAudio, #testAudio, #presentationMode {
-                        flex: 1;
-                        user-select: none;
-                        cursor: pointer;
-
-                        display: flex;
-                        justify-content: center;
-                    }
-
-                    #cycleVideo {
-                        display: none;
-                    }
-
-                    #cycleVideo span, #cycleAudio span, #testAudio span, #presentationMode span {
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: center;
-                        text-align: center;
-                    }
-                </style>
-
-                <script data-script='settings'>
-                    const settings = document.querySelector('#settings');
-                </script>
-
-                <div id='controls'>
-                    <style data-style='controls'>
-                        #controls {
-                            display: none;
-                            flex-direction: column;
-                        }
-
-                        #videoSelect, #audioSelect {
-                            text-overflow: ellipsis;
-                        }
-                    </style>
-
-                    <select id='videoSelect'></select>
-                    <select id='audioSelect'></select>
-                    <script data-script='select'>
-                        const videoSelect = document.querySelector('#videoSelect');
-                        
-                        let videoSelectLock = false;
-                        videoSelect.addEventListener('input', event => {
-                            if(videoSelectLock) return;
-                            videoSelectLock = true;
-
-                            streamMixer.removeStream(localStreams.video);
-                            stopStream(localStreams.video);
-
-                            const option = videoSelect.options[videoSelect.selectedIndex];
-                            if(option.hasAttribute('data-local')) {
-                                navigator.mediaDevices.getUserMedia({video: {deviceId: {exact: videoSelect.value}}})
-                                    .then(mediaStream => {
-                                        localStreams.video = mediaStream;
-                                        videoSelectLock = false;
-                                        streamMixer.soloVideo(localStreams.video);
-                                        document.dispatchEvent(new Event('localstreams'));
-
-                                        const mirror = !videoSelect.options[videoSelect.selectedIndex].innerText.toLowerCase().includes('back')
-                                        
-                                        // delay
-                                        document.dispatchEvent(new CustomEvent('mirror', {
-                                            detail : {mirror},
-                                        }));
-                                    });
-                            }
-                            else {
-                                const _stream = mixerClientStreams.find(_stream => _stream.getId() == option.value);
-                                if(_stream) {
-                                    streamMixer.soloVideo(_stream.stream);
-                                }
-                                videoSelectLock = false;
-
-                                view.onUpdateMirror();
-                            }
-                        });
-
-                        const audioSelect = document.querySelector('#audioSelect');
-                        let audioSelectLock = false;
-                        audioSelect.addEventListener('input', event => {
-                            if(audioSelectLock) return;
-                            audioSelectLock = true;
-                            
-                            streamMixer.removeStream(localStreams.audio);
-                            stopStream(localStreams.audio);
-                            
-                            const option = audioSelect.options[audioSelect.selectedIndex];
-                            if(option.hasAttribute('data-local')) {
-                                navigator.mediaDevices.getUserMedia({audio: {deviceId: audioSelect.value}})
-                                    .then(mediaStream => {
-                                        localStreams.audio = mediaStream;
-                                        audioSelectLock = false;
-                                        document.dispatchEvent(new Event('localstreams'));
-                                    });
-                            }
-                            else {
-                                // soloAudio
-                                audioSelectLock = false;
-                            }
-                        });
-
-                        let updatingSelects = false;
-                        navigator.mediaDevices.addEventListener('devicechange', event => {
-                            if(updatingSelects) return;
-                            updatingSelects = true;
-                            
-                            videoSelect.innerHTML = '';
-                            audioSelect.innerHTML = '';
-
-                            navigator.mediaDevices.enumerateDevices().then(devices => devices.filter(device => device.kind.includes('input'))).then(outputDevices => {
-                                outputDevices.forEach(device => {
-                                    const {kind, deviceId, label} = device;
-                                    
-                                    const option = new Option(label, deviceId);
-                                        option.setAttribute('data-local', '');
-                                    
-                                    const select = kind.includes('video')? videoSelect:audioSelect;
-                                        select.appendChild(option);
-                                });
-                            }).then(() => {
-                                mixerClientStreams.forEach((_stream, index) => {
-                                    const option = new Option(_stream.getId(), _stream.getId());
-                                    videoSelect.appendChild(option);
-                                    if(event.detail && event.detail.stream && event.detail.stream == _stream) {
-                                        videoSelect.selectedIndex = Array.from(videoSelect.options).indexOf(option);
-                                        view.onUpdateMirror();
-                                    }
-                                });
-
-                                if(event.detail && !isNaN(event.detail.selectedIndex)) {
-                                    videoSelect.selectedIndex = event.detail.selectedIndex;
-                                    videoSelect.dispatchEvent(new Event('input'));
-                                    view.onUpdateMirror();
-                                }
-
-                                updatingSelects = false;
-
-                                document.dispatchEvent(new Event('devicechange'));
-                            });
-                        });
-                    </script>
-                </div>
-
-                <div id='cycleVideo'>
-                    <span>Cycle Video</span>
-                </div>
-                <div id='cycleAudio'>
-                    <span>Cycle Audio</span>
-                </div>
-                <script data-script='cycleSelect'>
-                    const cycleVideo = document.querySelector('#cycleVideo');
-                    cycleVideo.addEventListener('click', event => {
-                        if(videoSelect.childElementCount > 1) {
-                            videoSelect.selectedIndex = (videoSelect.selectedIndex+1) % videoSelect.childElementCount;
-                            videoSelect.dispatchEvent(new Event('input'));
-                        }
-                    });
-
-                    const cycleAudio = document.querySelector('#cycleAudio');
-                    cycleAudio.addEventListener('click', event => {
-                        if(audioSelect.childElementCount > 1) {
-                            audioSelect.selectedIndex = (audioSelect.selectedIndex+1) % audioSelect.childElementCount;
-                            audioSelect.dispatchEvent(new Event('input'));
-                        }
-                    });
-                </script>
-
-                <div id='testAudio'>
-                    <span>Test Audio</span>
-                </div>
-                <script data-script='testAudio'>
-                    const testAudioButton = document.querySelector('#testAudio');
-                    testAudioButton.addEventListener('click', event => {
-                        const muted = (event.detail.muted !== undefined)?
-                            event.detail.muted :
-                            !outputAudio.muted;
-                        
-                        outputAudio.muted = muted;
-                        
-                        if(event.isTrusted) {
-                            if(true || !muted)
-                                muteAudioButton.dispatchEvent(new CustomEvent('click', {
-                                    detail : {muted : !muted}
-                                }));
-                        }
-
-                        testAudioButton.querySelector('span').innerText = outputAudio.muted?
-                            'test audio':
-                            'stop testing audio';    
-                    });
-                </script>
-
-                <div id='presentationMode'>
-                    <span>Present</span>
-                </div>
-
-                <script data-script='presentationMode'>
-                    const presentationModeButton = document.querySelector('#presentationMode');
-                    document.addEventListener('croquetstartsession', event => {
-                        presentationModeButton.addEventListener('click', event => {
-                            view.togglePresentationMode(!ui.classList.contains('presentation'));
-                        });
-
-                        document.addEventListener('presentationmode', event => {
-                            if(view.model.presentationMode) {
-                                ui.classList.add('presentation');
-                                presentationModeButton.querySelector('span').innerText = 'Show Peers';
-                            }
-                            else {
-                                ui.classList.remove('presentation');
-                                presentationModeButton.querySelector('span').innerText = 'Present';
-                            }
-
-                            const intervalId = window.setInterval(() => {
-                                window.dispatchEvent(new Event('resize'));
-                            }, 10);
-
-                            setTimeout(() => {
-                                window.clearInterval(intervalId);
-                            }, 500);
-                            
-                        });
-                    }, {once: true});
-                </script>
-
-                <div id='volume'>
-                    <style data-style='volume'>
-                        #volume {
-                            display: flex;
-                            flex-direction: column;
-                            align-self: center;
-                        }
-
-                        @media (min-aspect-ratio: 4/3) {#volume {
-                            width: 90%;
-                        }}
-                        @media (max-aspect-ratio: 4/3) {#volume {
-                            height: 90%;
-                        }}
-
-                        #volumeInput {
-                            flex: 1;
-                            align-self: center;
-                            cursor: pointer;
-                        }
-
-                        #volumeTitle {
-                            display: flex;
-                            flex-direction: column;
-                            justify-content: center;
-                        }
-                        #volumeTitle span {
-                            text-align: center;
-                        }
-                    </style>
-
-                    <div id='volumeTitle'>
-                        <span>Volume</span>
-                    </div>
-
-                    <input id='volumeInput' type='range' value='1' min='0' max='2' step='0.01'>
-                    <style data-style='volumeInput'>
-                        @media (min-aspect-ratio: 4/3) {#volumeInput {
-                            width: 100%;
-                        }}
-                        @media (max-aspect-ratio: 4/3) {#volumeInput {
-                            -webkit-appearance: slider-vertical;
-                            writing-mode: bt-lr;
-                            height: 80%;
-                        }}
-                    </style>
-
-                    <script data-script='volume'>
-                        const volumeInput = document.querySelector('#volumeInput');
-                        volumeInput.addEventListener('input', event => {
-                            const gain = Number(event.target.value);
-                            streamMixer.audioInputs.forEach(audioInput => audioInput.gain = gain);
-                        });
-                    </script>
-                </div>
-
-                <a id='qrcode'>
-                    <style data-style='qrcode'>
-                        #qrcode {
-                            border: solid white 10px;
-                            flex: 1;
-                            min-width: 165px; max-width: 165px;
-                            min-height: 165px; max-height: 165px;
-                            width: 165px; height: 165px;
-                            align-self: center;
-                            background-color: white;
-                        }
-
-
-                        #qrcode img, #qrcode canvas {
-                            width: 100%;
-                            height: 100%;
-                            object-fit: contain;
-                        }
-                    </style>
-
-                    <script data-script='qrcode'>
-                        const qrcode = document.querySelector('#qrcode');
-
-                        document.addEventListener('croquetstartsession', event => {
-                            const qrcodeURL = `https://${location.host}/c/default.html?c=${channelName}&i=${view.index}`;
-                            new QRCode(qrcode, {
-                                text: qrcodeURL,
-                                width: 250,
-                                height: 250,
-                                colorDark : "#000000",
-                                colorLight : "#ffffff",
-                                correctLevel : QRCode.CorrectLevel.H,
-                            });
-                            qrcode.href = qrcodeURL;
-                            qrcode.title = '';
-                        }, {once: true});
-                    </script>
-                </a>
-            </div>
-
-            <div id='activePeer'>
-                <style data-style='activePeer'>
-                    #activePeer {
-                        background-color: powderblue;
-                        flex: 1;
-
-                        display: flex;
-                        align-content: center;
-                        justify-content: center;
-                    }
-
-                    #activePeerOutput {
-                        align-self: stretch;
-                        position: relative;
-                        display: flex;
-                    }
-
-                    #activePeerOutput canvas.video, #activePeerOutput video {
-                        flex: 1;
-                    }
-
-                    @media (min-aspect-ratio: 4/3) {#activePeerOutput {flex-direction: row; height: 100%}}
-                    @media (max-aspect-ratio: 4/3) {#activePeerOutput {flex-direction: column; width: 100%}}
-
-                    #activePeer.mute-video #activePeerOutput {
-                        background-color: black;
-                    }
-
-                    @media (min-aspect-ratio: 4/3) {#activePeer {flex-direction: column}}
-                    @media (max-aspect-ratio: 4/3) {#activePeer {flex-direction: row}}
-
-                    #activePeer.mirror canvas.video, #activePeer.mirror video {
-                        transform: scaleX(-1);
-                    }
-
-                    .presentation #activePeer video {
-                        transform: scaleX(-1);
-                    }
-
-                    #activePeer:not([data-canvas]) canvas.video {
-                        display: none;
-                    }
-                    #activePeer[data-canvas] video {
-                        display: none;
-                    }
-
-                    #activePeer canvas.video, #activePeer video {
-                        object-fit: cover;
-                    }
-
-                    #activePeer.mute-video canvas.video {
-                        opacity: 0;
-                    }
-                </style>
-
-                <div id='activePeerOutput'>
-                    <canvas class='waveform'></canvas>
-                    <video muted playsinline autoplay></video>
+                    <video autoplay playsinline muted></video>
                     <canvas class='video'></canvas>
                 </div>
-            </div>
-
-            <script data-script='activePeer'>
-                const activePeer = document.querySelector('#activePeer');
-                const activePeerWaveformCanvas = activePeer.querySelector('canvas.waveform');
-                const activePeerWaveformCanvasContext = activePeerWaveformCanvas.getContext('2d');
-
-                const activePeerVideo = activePeer.querySelector('video');
-                const activePeerVideoCanvas = activePeer.querySelector('canvas.video');
-
-                window.addEventListener('resize', event => {
-                    // fill
-                });
-
-                document.addEventListener('mirror', event => {
-                    if(activePeer.dataset.id == stream.getId()) {
-                        const {mirror} = event.detail;
-                        if(mirror)
-                            activePeer.classList.add('mirror');
-                        else
-                            activePeer.classList.remove('mirror');
-                    }
-                });
-
-                let activePeerLock = false;
-                document.addEventListener('activepeer', event => {
-                    if(activePeerLock) return;
-                    activePeerLock = true;
-                    
-                    const _stream = event.detail.stream;
-                    const id = _stream.getId();
-                    const peer = getPeer(id);
-
-                    if(peer) {
-                        if(peer.classList.contains('mute-video'))
-                            activePeer.classList.add('mute-video')
-                        else
-                            activePeer.classList.remove('mute-video');
-
-                        if(peer.classList.contains('mirror'))
-                            activePeer.classList.add('mirror');
-                        else
-                            activePeer.classList.remove('mirror');
-                        
-                        if(peer.classList.contains('mute-audio'))
-                            activePeer.classList.add('mute-audio');
-                        else
-                            activePeer.classList.remove('mute-audio');
-                                                
-                        if(id != activePeer.dataset.id) {
-                            if(stream == _stream) {
-                                streamMixer.addCanvas(activePeerVideoCanvas);
-                                activePeer.dataset.canvas =  '';
-                                activePeerVideo.srcObject = null;
-                            }
-                            else {
-                                streamMixer.removeCanvas(activePeerVideoCanvas);
-                                activePeerVideo.srcObject = _stream.stream;
-                                delete activePeer.dataset.canvas;
-                            }
-                        }
-
-                        //activePeer.style.display = 'inherit';
-                        activePeer.dataset.id = id;
-    
-                        window.dispatchEvent(new Event('resize'));
-                    }
-
-                    activePeerLock = false;
-                });
-            </script>
-
-            <div id='peers'>
-                <style data-style='peers'>
-                    #peers {
-                        background-color: palegoldenrod;
-                        flex:1;
-
-                        display: grid;
-                        grid-template-columns: 100%;
-                        grid-template-rows: 100%;
-
-                        justify-content: center; align-items: center;
-                        grid-auto-flow: dense;
-
-                        overflow: hidden;
-
-                        transition: flex 0.5s;
-                    }
-
-                    .presentation #peers {
-                        flex: 0;
-                    }
-                </style>
-
-                <style data-style='peer'>
-                    .peer {
-                        position: relative;
-                        width: 100%; height: 100%;
-                        background-color: black;
-                    }
-
-                    .peer canvas.video {
-                        width: 100%;
-                        height: 100%;
-                    }
-
-                    .peer.mirror canvas.video, .peer.mirror video {
-                        transform: scaleX(-1);
-                    }
-                    
-                    .mute-audio video, .mute-audio canvas.video {
-                        filter: grayscale(100%);
-                    }
-
-                    .peer.mute-video canvas.video {
-                        display: none;
-                    }
-
-                    canvas.waveform {
-                        position: absolute; z-index: 2;
-                        width: 100%;
-                        height: 20%;
-                        bottom: 0;
-                        -webkit-mask-image: linear-gradient(to right, transparent, black, transparent);
-                        mask-image: linear-gradient(to right, transparent, black, transparent);
-                    }
-                </style>
-
                 <template>
                     <div class='peer'>
                         <canvas class='waveform'></canvas>
                     </div>
                 </template>
+            </div>
 
-                <script data-script='peers'>
-                    const streams = [];
+            <script data-script='peers'>
+                const streams = [];
 
-                    document.addEventListener('stream', event => {
-                        document.dispatchEvent(new CustomEvent('addpeer', {
-                            detail : {stream : event.detail.stream},
-                        }));
-                    }, {once: true});
+                const activePeer = document.querySelector('#activePeer');
+                //activePeer.addEventListener('click', event => onPeerActive());
 
-                    document.addEventListener('stream-subscribed', event => {
-                        document.dispatchEvent(new CustomEvent('addpeer', {
-                            detail : {stream : event.detail.stream},
-                        }));
-                    });
+                const peers = document.querySelector('#peers');
+                const peerTemplate = document.querySelector(`#peers template`);
 
-                    const peers = document.querySelector('#peers');
-                    const peerTemplate = peers.querySelector('template');
-                    
-                    document.addEventListener('addpeer', event => {
-                        const _stream = event.detail.stream;
-                        streams.push(_stream);
-
-                        document.addEventListener('click', event => {
-                            _stream.getAudioLevel();
-                            _stream.audioLevelHelper.audioContext.resume();
-                        }, {once: true});
-
+                const getPeer = (id) => {
+                    return document.querySelector(`[data-id="${id}"].peer`);
+                }
+                const addPeer = (_stream) => {
+                    document.addEventListener('click', event => {
                         _stream.getAudioLevel();
+                        _stream.audioLevelHelper.audioContext.resume();
+                    }, {once: true});
+                    
+                    _stream.getAudioLevel();
+                    //_stream.audioLevelHelper.analyser.fftSize = 2**8;
+                    streams.push(_stream);
+                    const peer = peerTemplate.content.cloneNode(true).querySelector('.peer');
 
-                        const peer = peerTemplate.content.cloneNode(true).querySelector('.peer');
+                    const id = _stream.getId();
+                    peer.dataset.id = id;
+                    peer.style.order = id.toString().substr(0, 9);
+                    peer.id = id.toString();
 
-                        if(_stream == stream)
-                            peer.classList.add('mirror');
-
-                        const id = _stream.getId();
-                        peer.dataset.id = id;
-                        peer.style.order = view.model.getIndex(id);
-                        peer.id = `peer-${id}`;
-
-                        peers.appendChild(peer);
-                        _stream.stream.oninactive = () => {
-                            peer.remove();
-
-                            document.dispatchEvent(new CustomEvent('removepeer', {
-                                detail : {stream : _stream},
-                            }));
+                    const removePeer = () => {
+                        if(streams.includes(_stream)) {
+                            streams.splice(streams.indexOf(_stream), 1);
                         }
+                        peer.remove();
 
-                        if(_stream == stream) {
-                            peer.appendChild(streamMixer.canvas);
+                        if(activePeer.dataset.id == id) {
+                            onPeerActive();
                         }
                         else {
-                            _stream.play(peer.id, {fit: 'contain'});
-                            document.addEventListener('click', event => {
-                                const audio = peer.querySelector('audio');
-                                if(audio) {
-                                    audio.muted = false;
-                                    audio.play();
-                                }
-                            }, {once: true});
+                            onPeerActive(activePeer.dataset.id);
                         }
 
                         window.dispatchEvent(new Event('resize'));
-                    });
-
-                    document.addEventListener('mute-audio', event => {
-                        const id = event.detail.id;
-                        const peer = getPeer(id);
-
-                        if(peer) {
-                            peer.classList.add('mute-audio');
-
-                            if(activePeer.dataset.id == id) {
-                                activePeer.classList.add('mute-audio');
-                            }
-                        }
-                    });
-                    document.addEventListener('unmute-audio', event => {
-                        const id = event.detail.id;
-                        const peer = getPeer(id);
-
-                        if(peer) {
-                            peer.classList.remove('mute-audio');
-
-                            if(activePeer.dataset.id == id) {
-                                activePeer.classList.remove('mute-audio');
-                            }
-                        }
-                    });
-
-                    document.addEventListener('mute-video', event => {
-                        const id = event.detail.id;
-                        const peer = getPeer(id);
-
-                        if(peer) {
-                            peer.classList.add('mute-video');
-
-                            if(activePeer.dataset.id == id) {
-                                activePeer.classList.add('mute-video');
-                            }
-                        }
-                    });
-
-                    document.addEventListener('unmute-video', event => {
-                        const id = event.detail.id;
-                        const peer = getPeer(id);
-
-                        if(peer) {
-                            peer.classList.remove('mute-video');
-
-                            if(activePeer.dataset.id == id) {
-                                activePeer.classList.remove('mute-video');
-                            }
-                        }
-                    });
-                    
-                    const getPeer = (id) => {
-                        return peers.querySelector(`[data-id="${id}"]`);
                     }
 
-                    document.addEventListener('mirror', event => {
-                        const peer = getPeer(stream.getId());
+                    _stream.stream.oninactive = () => removePeer();
 
-                        const {mirror} = event.detail;
-                        if(mirror)
-                            peer.classList.add('mirror');
-                        else
-                            peer.classList.remove('mirror');
-                    });
-
-                    document.addEventListener('croquetstartsession', event => {
-                        window.addEventListener('resize', event => {
-                            if(ui.classList.contains('presentation')) return;
-
-                            const width = peers.clientWidth;
-                            const height = peers.clientHeight;
-    
-                            const aspectRatio = width/height;
-    
-                            let rows = 1;
-                            let columns = 1;
-    
-                            let gridTemplateColumns = ``;
-                            let gridTemplateRows = ``;
-    
-                            const numberOfPeers = peers.querySelectorAll('.peer:not(template)').length;
-    
-                            while(numberOfPeers > rows*columns) {
-                                const aspectRatios = {
-                                    row : Math.abs(aspectRatio - columns/(rows+1)),
-                                    column : Math.abs(aspectRatio - (columns+1)/rows),
-                                };
-    
-                                if(aspectRatios.row < aspectRatios.column)
-                                    rows++
-                                else
-                                    columns++;
+                    peers.appendChild(peer);
+                    if(_stream !== stream) {
+                        _stream.play(id.toString(), {fit:'contain'});
+                        
+                        document.addEventListener('click', event => {
+                            const audio = peer.querySelector('audio');
+                            if(audio) {
+                                audio.muted = false;
+                                audio.play();
                             }
-    
-                            gridTemplateColumns = `repeat(${columns}, 1fr)`;
-                            gridTemplateRows = `repeat(${rows}, 1fr)`;
-                            
-                            let length = Math.floor(Math.min(width/columns, height/rows));
-                            length = Math.min(length, Math.sqrt((1280*720)/numberOfPeers));
-                            length = Math.max(length, 32);
-                            if(streamMixer) {                                
-                                streamMixer.length = length;
-
-                                document.querySelectorAll('canvas.waveform').forEach(canvas => {
-                                    canvas.width = length;
-                                    canvas.height = length*0.2;
-                                });
-                            }
-                            const lengthString = `${length}px`;
-    
-                            gridTemplateColumns = gridTemplateColumns.replace(/1fr/g, lengthString);
-                            gridTemplateRows = gridTemplateRows.replace(/1fr/g, lengthString);
-                            
-                            peers.style.gridTemplateRows = gridTemplateRows;
-                            peers.style.gridTemplateColumns = gridTemplateColumns;
                         });
 
-                        window.dispatchEvent(new Event('resize'));
-                    });
-                    
-                    const waveforms = {};
-                    const period = 0.2;
-                    const numberOfWaveformSamples = 50;
+                        peer.addEventListener('click', event => {
+                            //onPeerActive(id);
+                        });
+                    }
+                    else {
+                        peer.appendChild(streamMixer.canvas);
 
-                    document.addEventListener('stream', event => {
-                        window.setInterval(() => {
-                            streams.forEach(_stream => {
-                                let waveform = waveforms[_stream.getId()];
-                                if(!waveform) {
-                                    waveform = waveforms[_stream.getId()] = new Array(0);
-                                    waveform.fill(0);
+                        peer.addEventListener('click', event => {
+                            const videoInput = streamMixer.videoInputs.find(videoInput => !videoInput.isVideoMuted);
+                            if(videoInput && streamMixer.videoInputs.length > 1) {
+                                const index = streamMixer.videoInputs.indexOf(videoInput);
+                                /*
+                                const nextIndex = (streamMixer.videoInputs.length == index+1)?
+                                    0 :
+                                    index+1;
+                                */
+                                const nextIndex = (index+1) % streamMixer.videoInputs.length;
+                                const nextVideoInput = streamMixer.videoInputs[nextIndex];
+                                streamMixer.soloVideo(nextVideoInput.stream);
+                                if(mixerView) {
+                                    const mixerStream = mixerStreams.find(mixerStream => mixerStream.stream == nextVideoInput.stream);
+                                    if(mixerStream)
+                                        mixerView.setStreamId(mixerStream.getId());
+                                    
                                 }
+                            }
+                        });
+                    }
 
-                                const audioLevel = _stream.getAudioLevel();
+                    window.dispatchEvent(new Event('resize'));
 
-                                waveform.push(audioLevel);
-                                if(waveform.length > numberOfWaveformSamples)
-                                    waveform.shift();
+                    if(id == activePeer.dataset.id)
+                        onPeerActive(id);
+                }
+
+                client.on('stream-added', event => client.subscribe(event.stream));
+                client.on('stream-subscribed', event => addPeer(event.stream));
+                client.on('peer-leave', event => {
+                    if(!MediaStream.prototype.hasOwnProperty('oninactive')) {
+                        const id = event.uid;
+                        const stream = streams.find(stream => stream.getId() == id);
+                        if(stream)
+                            stream.stream.oninactive();
+                    }
+                });
+                
+                const onPeerMuteAudio = (id) => {
+                    const peer = getPeer(id);
+                    peer.classList.add('mute-audio');
+                    if(activePeer.dataset.id == id) {
+                        onPeerActive();
+                    }
+                }
+                client.on('mute-audio', event => onPeerMuteAudio(event.uid));
+
+                const onPeerUnmuteAudio = (id) => {
+                    const peer = getPeer(id);
+                    peer.classList.remove('mute-audio');
+                }
+                client.on('unmute-audio', event => onPeerUnmuteAudio(event.uid));
+
+                const onPeerMuteVideo = (id) => {
+                    const peer = getPeer(id);
+                    const video = peer.querySelector('video');
+                    peer.classList.add('mute-video');
+                    if(activePeer.dataset.id == id) {
+                        activePeer.classList.add('mute-video')
+                    }
+                }
+                client.on('mute-video', event => onPeerMuteVideo(event.uid));
+
+                const onPeerUnmuteVideo = (id) => {
+                    const peer = getPeer(id);
+                    const video = peer.querySelector('video');
+                    peer.classList.remove('mute-video');
+                    if(activePeer.dataset.id == id) {
+                        activePeer.classList.remove('mute-video')
+                    }
+                }
+                client.on('unmute-video', event => onPeerUnmuteVideo(event.uid));
+
+                let switchingActivePeer = false;
+                const onPeerActive = (id) => {                    
+                    if(switchingActivePeer) return;
+                    switchingActivePeer = true;
+
+                    const peer = getPeer(id);
+                    const _stream = streams.find(stream => stream.getId() == id);
+
+                    const video = activePeer.querySelector('video');
+                    const canvas = activePeer.querySelector('canvas.video');
+
+                    if(peer && _stream && streams.length >= 3) {
+                        if(peer.classList.contains('mute-video'))
+                            activePeer.classList.add('mute-video')
+                        else
+                            activePeer.classList.remove('mute-video');
+
+                        if(id == activePeer.dataset.id) {
+                            if(stream == _stream) {
+                                streamMixer.addCanvas(canvas);
+                                activePeer.dataset.canvas =  '';
+                                video.srcObject = null;
+                            }
+                            else {
+                                streamMixer.removeCanvas(canvas);
+                                video.srcObject = _stream.stream;
+                                delete activePeer.dataset.canvas;
+                            }
+                        }
+
+
+
+                        activePeer.style.display = 'inherit';
+                        activePeer.dataset.id = id;
+    
+                        window.dispatchEvent(new Event('resize'));
+                    }
+                    else {
+                        if(streams.length < 3) {
+                            video.srcObject = null;
+                            streamMixer.removeCanvas(canvas);
+
+                            activePeer.style.display = '';
+                            activePeer.removeAttribute('data-id');
+                        }
+                        else {
+                            // 
+                        }
+                    }
+
+                    switchingActivePeer = false;
+                }
+
+                let audioLevelIntervalId;
+                const waveforms = {};
+                const period = 0.5;
+                const numberOfWaveformSamples = 50;
+                document.addEventListener('click', event => {
+                    audioLevelIntervalId = setInterval(() => {
+                        streams.forEach(stream => {
+                            let waveform = waveforms[stream.getId()];
+                            if(!waveform) {
+                                waveform = waveforms[stream.getId()] = new Array(0);
+                                waveform.fill(0);
+                            }
+
+                            const audioLevel = stream.getAudioLevel();
+                            console.log(audioLevel);
+
+                            waveform.push(audioLevel);
+                            if(waveform.length > numberOfWaveformSamples)
+                                waveform.shift();
+                        });
+                    }, period*1000/numberOfWaveformSamples);
+                }, {once: true});
+
+                const renderWaveformLoop = () => {
+                    streams.forEach(stream => {
+                        const peer = getPeer(stream.getId());
+                        const waveform = waveforms[stream.getId()];
+
+                        if(peer && waveform) {
+                            const canvas = peer.querySelector('canvas');
+                            const context = canvas.getContext('2d');
+
+                            const sampleWidth = canvas.width/numberOfWaveformSamples;
+                            context.clearRect(0, 0, canvas.width, canvas.height);
+
+                            context.fillStyle = 'green';
+                            waveform.forEach((sample, index) => {
+                                const sampleHeight = sample * canvas.height;
+
+                                const sampleX = (index*sampleWidth);
+                                const sampleY = canvas.height*(0.5 - (sample/2));
+    
+                                context.fillRect(sampleX, sampleY, sampleWidth, sampleHeight);
                             });
-                        }, 1000*period/numberOfWaveformSamples);
 
-                        window.setInterval(() => {
-                            const levels = streams.map(_stream => _stream.getAudioLevel());
+                            if(activePeer.dataset.id == stream.getId()) {
+                                const _canvas = activePeer.querySelector('canvas');
+                                const _context = _canvas.getContext('2d');
+
+                                _context.clearRect(0, 0, _canvas.width, _canvas.height);
+                                _context.drawImage(_canvas, 0, 0);
+                            }
+                        }
+                    });
+                    window.requestAnimationFrame(renderWaveformLoop);
+                }
+
+                const renderWaveformLoopIntervalId = window.requestAnimationFrame(renderWaveformLoop);
+            </script>
+
+            <script data-script='croquet-active-speaker'>
+                class ChatModel extends Croquet.Model {
+                    init({channelName}) {
+                        super.init();
+
+                        this.channelName = channelName;
+                        this.subscribe('active-speaker', 'set', this.onSetActiveSpeaker);
+                    }
+
+                    onSetActiveSpeaker({activeSpeakerId}) {
+                        if(this.activeSpeakerId !== activeSpeakerId) {
+                            this.activeSpeakerId = activeSpeakerId;
+                            this.publish('active-speaker', 'update');
+                        }
+                    }
+                }
+                ChatModel.register();
+
+                class ChatView extends Croquet.View {
+                    constructor(model) {
+                        super(model);
+                        this.model = model;
+
+                        this.subscribe('active-speaker', 'update', this.onUpdateActiveSpeaker);
+                        this.onUpdateActiveSpeaker();
+                    }
+
+                    onUpdateActiveSpeaker() {
+                        onPeerActive(this.model.activeSpeakerId);
+                    }
+
+                    setActiveSpeaker(activeSpeakerId) {
+                        if(this.model.activeSpeakerId !== activeSpeakerId)
+                            this.publish('active-speaker', 'set', {activeSpeakerId});
+                    }
+                }
+
+                Croquet.App.root = false;
+
+                let view;
+                if(false) {
+                    Croquet.startSession('zakchat', ChatModel, ChatView, {
+                        options : {channelName},
+                    }).then(session => {
+                        view = session.view;
+                        client.on('active-speaker', event => view.setActiveSpeaker(event.uid));
+                        view.onUpdateActiveSpeaker();
+                    });
+                }
+                else {
+                    setInterval(() => {
+                        if(true || streams.length >= 3) {
+                            const levels = streams.map(stream => stream.getAudioLevel());
                             let maxIndex = 0;
                             let maxLevel = 0;
                             levels.forEach((level, index) => {
@@ -1637,227 +840,760 @@
                                     maxIndex = index;
                                 }
                             });
-
-                            if(maxLevel > 0.32)
-                                document.dispatchEvent(new CustomEvent('activepeer', {
-                                    detail : {
-                                        stream : streams[maxIndex],
-                                    }
-                                }));
-                        }, 200);
-
-                        const waveformAnimationLoop = () => {
-                            streams.forEach(_stream => {
-                                const id = _stream.getId();
-
-                                const peer = getPeer(id);
-                                const waveform = waveforms[id];
-
-                                if(peer && waveform) {
-                                    const canvas = peer.querySelector('canvas.waveform');
-                                    const context = canvas.getContext('2d');
     
-                                    const sampleWidth = canvas.width/numberOfWaveformSamples;
-                                    context.clearRect(0, 0, canvas.width, canvas.height);
-    
-                                    context.fillStyle = 'green';
-                                    waveform.forEach((sample, index) => {
-                                        const sampleHeight = sample * canvas.height;
-    
-                                        const sampleX = (index*sampleWidth);
-                                        const sampleY = canvas.height*(0.5 - (sample/2));
-            
-                                        context.fillRect(sampleX, sampleY, sampleWidth, sampleHeight);
-                                    });
-    
-                                    if(stream == _stream) {
-                                        outputCanvasWaveformContext.clearRect(0, 0, outputCanvasWaveform.width, outputCanvasWaveform.height);
-                                        outputCanvasWaveformContext.drawImage(canvas, 0, 0);
-                                    }
-    
-                                    if(_stream.getId() == activePeer.dataset.id) {
-                                        activePeerWaveformCanvasContext.clearRect(0, 0, activePeerWaveformCanvas.width, activePeerWaveformCanvas.height);
-                                        activePeerWaveformCanvasContext.drawImage(canvas, 0, 0);
-                                    }
-                                }
-                            });
-                            window.requestAnimationFrame(waveformAnimationLoop);
+                            if(maxLevel > 0.35)
+                                onPeerActive(streams[maxIndex].getId());
                         }
-                        window.requestAnimationFrame(waveformAnimationLoop);
-                    }, {once: true});
-                </script>
-            </div>
-        </div>
-    </body>
-
-    <script data-script='croquet'>
-        class Model extends Croquet.Model {
-            init() {
-                super.init();
-
-                this.users = [];
-
-                this.presentationMode = false;
-
-                this.subscribe(this.sessionId, 'peer-join', this.onPeerJoin);
-                this.subscribe(this.sessionId, 'view-exit', this.onViewExit);
-
-                this.subscribe(this.sessionId, 'camera-join', this.onCameraJoin);
-
-                this.subscribe(this.sessionId, 'camera-mirror', this.onCameraMirror);
-
-                this.subscribe(this.sessionId, 'set-presentation-mode', this.setPresentationMode);
-            }
-
-            setPresentationMode({presentationMode}) {
-                this.presentationMode = presentationMode;
-                this.publish(this.sessionId, 'on-presentation-mode');
-            }
-
-            cleanupUsers() {
-                if(this.users.every(user => user == undefined))
-                    this.users.length = 0;
-            }
-
-            onPeerJoin(viewId) {
-                this.cleanupUsers();
-
-                if(this.users.every(user => user.viewId !== viewId)) {
-                    this.users.push({
-                        viewId,
-                        cameras : [],
-                    });
-    
-                    this.publish(this.sessionId, 'on-peer-join', viewId);
+                    }, 200);
                 }
-            }
-            onViewExit(viewId) {
-                const user = this.getUser(viewId);
-                
-                if(user) {
-                    //delete this.users[this.users.indexOf(user)];
-                    this.publish(this.sessionId, 'on-peer-exit', viewId);
-                }
-                else {
-                    const camera = this.getCamera(viewId);
-                    if(camera) {
-                        const cameraUser = this.users.find(user => user && user.cameras.includes(camera));
-                        if(cameraUser) {
-                            const cameraIndex = cameraUser.cameras.indexOf(camera);
-                            //delete cameraUser.cameras[cameraIndex];
-                            if(cameraUser.cameras.every(camera => camera == undefined))
-                                cameraUser.cameras.length = 0;
-                            this.publish(cameraUser.viewId, 'on-camera-exit', viewId);
-                        }
-                    }
-                }
-            }
 
-            onCameraJoin({cameraViewId, userViewId}) {                
-                const user = this.getUser(userViewId);
+                //client.on('active-speaker', event => onPeerActive(event.uid));
+            </script>
 
-                if(user) {
-                    if(!user.cameras.find(camera => camera.viewId == cameraViewId))
-                        user.cameras.push({
-                            viewId : cameraViewId,
-                            mirror : true,
+            <script data-script='clientInit'>
+                let stream;
+                client.init(appID, () => {
+                    client.join(null, channelName, null, id => {
+                        stream = AgoraRTC.createStream({
+                            streamID: id,
+
+                            audio: true,
+                            audioSource : streamMixer.audioStream.getAudioTracks()[0],
+
+                            video: true,
+                            videoSource: streamMixer.videoStream.getVideoTracks()[0],
+
+                            mirror: true,
                         });
+
+                        stream.init(() => {
+                            client.publish(stream, error => console.error(error));
+                            addPeer(stream);
+                        }, error => console.error(error));
+                    });
+                });
+            </script>
+
+            <script data-script='resizePeers'>
+                window.addEventListener('resize', event => {
+                    let {width} = window.getComputedStyle(ui);
+                    let {height} = window.getComputedStyle(ui);
+
+                    width = Number(width.replace('px', ''));
+                    height = Number(height.replace('px', ''));
+
+                    if(getComputedStyle(ui).flexDirection.includes('row'))
+                        width = Math.max(0, width-120);
+                    else
+                        height = Math.max(0, height-120);
+
+                    const aspectRatio = width/height;
+
+                    let rows = 1;
+                    let columns = 1;
+
+                    let gridTemplateColumns = ``;
+                    let gridTemplateRows = ``;
+
+                    const numberOfPeers = peers.querySelectorAll('.peer:not(template)').length;
+
+                    if(getComputedStyle(activePeer).display !== 'none') {
+                        let activeSize = 2;
+
+                        while(numberOfPeers > ((rows*columns) - activeSize**2)) {
+                            const aspectRatios = {
+                                row : Math.abs(aspectRatio - columns/(rows+1)),
+                                column : Math.abs(aspectRatio - (columns+1)/rows),
+                            };
+
+                            if(aspectRatios.row < aspectRatios.column)
+                                rows++
+                            else
+                                columns++;
+                            
+                            activeSize = Math.max(2, Math.min(rows, columns)-2)
+                        }
+
+                        const leftColumns = Math.floor((columns - activeSize)/2);
+                        const rightColumns = Math.ceil((columns - activeSize)/2);
+                        if(leftColumns) gridTemplateColumns += `repeat(${leftColumns}, 1fr) `;
+                        gridTemplateColumns += ` [active-column-start] repeat(${activeSize}, 1fr) [active-column-end] `;
+                        if(rightColumns) gridTemplateColumns += `repeat(${rightColumns}, 1fr) `;
+
+                        const topRows = Math.floor((rows - activeSize)/2);
+                        const bottomRows = Math.ceil((rows - activeSize)/2);
+                        if(topRows) gridTemplateRows += `repeat(${topRows}, 1fr) `;
+                        gridTemplateRows += ` [active-row-start] repeat(${activeSize}, 1fr) [active-row-end] `;
+                        if(bottomRows) gridTemplateRows += `repeat(${bottomRows}, 1fr) `;
+                    }
+                    else {    
+                        while(numberOfPeers > rows*columns) {
+                            const aspectRatios = {
+                                row : Math.abs(aspectRatio - columns/(rows+1)),
+                                column : Math.abs(aspectRatio - (columns+1)/rows),
+                            };
+
+                            if(aspectRatios.row < aspectRatios.column)
+                                rows++
+                            else
+                                columns++;
+                        }
+
+                        gridTemplateColumns = `repeat(${columns}, 1fr)`;
+                        gridTemplateRows = `repeat(${rows}, 1fr)`;
+                    }
+
+                    const length = Math.floor(Math.min(width/columns, height/rows));
+                    if(streamMixer) {
+                        const _length = Math.floor(Math.sqrt((1280*720)/numberOfPeers));
+                        document.querySelectorAll('canvas.waveform').forEach(canvas => {
+                            canvas.width = _length;
+                            canvas.height = _length*0.2;
+                        });
+                        streamMixer.length = Math.max(32, Math.min(_length, 200));
+                    }
+                    const lengthString = `${length}px`;
+
+                    gridTemplateColumns = gridTemplateColumns.replace(/1fr/g, lengthString);
+                    gridTemplateRows = gridTemplateRows.replace(/1fr/g, lengthString);
+                    
+                    peers.style.gridTemplateRows = gridTemplateRows;
+                    peers.style.gridTemplateColumns = gridTemplateColumns;
+                });
+
+                window.dispatchEvent(new Event('resize'));
+            </script>
+
+            <style>
+                #controls {
+                    flex-basis: 120px;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    
+                }
+
+                #controls > * {
+                    order : 1;
+                }
+
+                @media (min-aspect-ratio: 3/2) {#controls {flex-direction: column; max-width: 120px}}
+                @media (max-aspect-ratio: 3/2) {#controls {flex-direction: row; max-height: 120px}}
+            </style>
+
+            <div id='controls'>
+                <style>
+                    #controls > div[data-control] {
+                        width: 100px;
+                        height: 100px;
+                        border-radius: 50%;
+                        overflow: hidden;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        border: solid black;
+                        user-select: none;
+                        max-width: 100px;
+                        max-height: 100px;
+                        flex: 1;
+                    }
+
+                    @media (min-aspect-ratio: 3/2) {#controls > div[data-control]:not(:nth-of-type(3)) {margin-bottom: 15px}}
+                    @media (max-aspect-ratio: 3/2) {#controls > div[data-control]:not(:nth-of-type(3)) {margin-right: 15px}}
+                </style>
+                <div data-control='muteAudio' onclick='muteAudio()'>mute</div>
+                <div data-control='muteVideo' onclick='muteVideo()'>hide</div>
+                <div data-control='settings' onclick='toggleSettings()'>settings</div>
+                
+                <script data-script='controls'>
+                    const muteAudioButton = document.querySelector(`#controls [data-control="muteAudio"]`);
+                    const muteVideoButton = document.querySelector(`#controls [data-control="muteVideo"]`);
+                    const settingsButton = document.querySelector(`#controls [data-control="settings"]`);
+                    
+                    const muteAudio = (muted, trigger = true) => {
+                        const id = stream.getId();
+                        if(stream) {
+                            if((muted == undefined && stream.isAudioOn()) || muted == true) {
+                                stream.muteAudio();
+                                streamMixer.canvasContext.filter = 'grayscale(100%)';
+                                onPeerMuteAudio(id);
+                            }
+                            else if((muted == undefined && !stream.isAudioOn()) || muted == false) {
+                                stream.unmuteAudio();
+                                if(trigger)
+                                    testAudio(true);
+                                streamMixer.canvasContext.filter = 'none';
+                                onPeerUnmuteAudio(id);
+                            }
+
+                            muteAudioButton.innerText = stream.isAudioOn()?
+                                'mute':
+                                'unmute';
+                        }
+                    };
+
+                    const muteVideo = (muted) => {
+                        if(stream) {
+                            const id = stream.getId();
+                            if((muted == undefined && stream.isVideoOn()) || muted == true) {
+                                stream.muteVideo();
+                                onPeerMuteVideo(id);
+                            }
+                            else if((muted == undefined && !stream.isVideoOn()) || muted == false) {
+                                stream.unmuteVideo();
+                                onPeerUnmuteVideo(id);
+                            }
+                            
+                            muteVideoButton.innerText = stream.isVideoOn()?
+                                'hide':
+                                'show';
+                        }
+                    };
+
+                    const toggleSettings = (hidden) => {
+                        if((hidden == undefined && !controls.hasAttribute('data-settings')) || hidden == false) {
+                            controls.dataset.settings = '';
+                            settingsButton.innerText = 'hide settings';
+                        }
+                        else if((hidden == undefined && controls.hasAttribute('data-settings')) || hidden == true) {
+                            delete controls.dataset.settings;
+                            settingsButton.innerText = 'settings';
+                        }
+                    }
+
+                    const testAudio = (muted, trigger = true) => {
+                        outputAudio.muted = (muted == undefined)?
+                            !outputAudio.muted :
+                            muted;
                         
-                    this.publish(userViewId, 'on-camera-join', cameraViewId);
-                }
-            }
-            
-            onCameraMirror({cameraViewId, userViewId, mirror}) {
-                const camera = this.getCamera(cameraViewId);
-                if(camera) {
-                    camera.mirror = mirror;
-                    this.publish(userViewId, 'on-camera-mirror', cameraViewId);
-                }
-            }
+                        if(trigger)
+                            muteAudio(!outputAudio.muted, false);
 
-            getIndex(viewId) {
-                return this.users.findIndex(user => user !== undefined && user.viewId == viewId);
-            }
-            getUser(viewId) {
-                return this.users[this.getIndex(viewId)];
-            }
+                        testAudioButton.innerText = outputAudio.muted?
+                            'test audio':
+                            'stop testing audio';              
+                    };
+                </script>
 
-            getCamera(viewId) {
-                let camera;
-                const user = this.users.some(user => {
-                    if(user) {
-                        camera = user.cameras.find(camera => camera !== undefined && camera.viewId == viewId);
-                        return camera;
+                <style>
+                    /*#output video.mute-audio {filter: grayscale(100%)}*/
+                    #output {
+                        /* display: flex; */
+                        display: none;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        align-content: center;
                     }
-                });
-                return camera;
-            }
-        }
-        Model.register();
-
-        class UserView extends Croquet.View {
-            constructor(model) {
-                super(model);
-                this.model = model;
-
-                this.subscribe(this.sessionId, 'on-peer-join', viewId => {
-                    if(viewId == this.viewId)
-                        document.dispatchEvent(new Event('croquetstartsession'));
-                });
-
-                this.subscribe(this.viewId, 'on-camera-join', viewId => {
-                    if(this.user.cameras.length > 0) {
-                        document.dispatchEvent(new Event('joinmixerclient'));
+                    #output video {
+                        align-self: center;
+                        flex: 1;
                     }
-                });
-
-                this.subscribe(this.viewId, 'on-camera-exit', viewId => {
-                    if(this.user.cameras.length == 0) {
-                        document.dispatchEvent(new Event('leavemixerclient'));
+                    #output audio {
+                        display: hidden;
                     }
-                });
+                </style>
 
-                this.subscribe(this.viewId, 'on-camera-mirror', this.onUpdateMirror);
+                <div id='output'>
+                    <video width='100' height='100' autoplay playsinline muted></video>
+                    <audio autoplay playsinline muted></audio>
+                </div>
 
-                this.subscribe(this.sessionId, 'on-presentation-mode', () => {
-                    document.dispatchEvent(new Event('presentationmode'));
-                });
+                <script data-script='output'>
+                    //const outputVideo = document.querySelector('#output video');
+                    const outputAudio = document.querySelector(`#output audio`);
+                    //outputVideo.srcObject = streamMixer.videoStream;
+                    outputAudio.srcObject = streamMixer.audioStream.clone();
+
+                    document.addEventListener('click', () => {/*outputVideo.play();*/ outputAudio.play()}, {once: true});
+                </script>
+
+                <style>
+                    #gain {
+                        /*display: flex;*/
+                        display: none;
+                        flex-direction: column;
+                        max-width: inherit;
+                        max-height: inherit;
+                    }
+                    #controls[data-settings] > #gain {
+                        display: flex;
+                    }
+                    @media (min-aspect-ratio: 3/2) {#gain {
+
+                    }}
+                    @media (max-aspect-ratio: 3/2) {#gain {
+
+                    }}
+
+                    #gainLabel {
+                        text-align: center;
+                        -webkit-user-select: none;
+                    }
+
+                    #gainInput {
+
+                    }
+                    @media (min-aspect-ratio: 3/2) {#gainInput {width: 100%;}}
+                    @media (max-aspect-ratio: 3/2) {#gainInput {
+                        -webkit-appearance: slider-vertical;
+                        writing-mode: bt-lr;
+                        height: 80px;
+                    }}
+                </style>
+
+                <div id='gain'>
+                    <span id='gainLabel'>Volume</span>
+                    <input id='gainInput' type='range' min='0' max='2' step='0.01' value='1'>
+                </div>
+
+                <script data-script='gainInput'>
+                    const gainInput = document.querySelector('#gainInput');
+                    gainInput.addEventListener('input', event => {
+                        const gain = Number(event.target.value);
+                        streamMixer.audioInputs.forEach(audioInput => audioInput.gain = gain);
+                    });
+                </script>
+
+                <style>
+                    #inputControls {
+                        /*display: flex;*/
+                        display: none;
+                        flex-direction: column;
+                        max-width: inherit;
+                        max-height: inherit;
+                    }
+                    #controls[data-settings] > #inputControls {
+                        display: flex;
+                    }
+                </style>
+                
+                <div id='inputControls'>
+                    <style>
+                        #inputControls select {
+                            text-overflow: ellipsis;
+                            max-width: 120px;
+                        }
+
+                        #inputControls button {
+                            flex: 1;
+                        }
+
+                        @media (min-aspect-ratio: 3/2) {#buttons {
+                            flex-direction: column;
+                        }}
+                        @media (max-aspect-ratio: 3/2) {#buttons {
+                            flex-direction: column;
+                        }}
+                    </style>
+
+                    <select id='videoSelect'></select>
+                    <select id='audioSelect'></select>
+                    <button style='z-index: 3' id='testAudio' onclick='testAudio()'>test audio</button>
+                    <button id='qrCodeToggle' onclick='toggleQRCode()'>show camera QR</button>
+
+                    <script data-script='inputSelects'>
+                        const localStreams = {};
+
+                        let mixerStream;
+
+                        const videoSelect = document.querySelector(`#videoSelect`);
+                        videoSelect.addEventListener('change', event => {
+                            let deviceId = event.target.value;
+                            if(deviceId == '')
+                                deviceId = true;
+
+                            navigator.mediaDevices.getUserMedia({video: {deviceId}})
+                                .then(stream => {
+                                    if(localStreams.video) {
+                                        streamMixer.removeStream(localStreams.video);
+                                        stopStream(localStreams.video);
+                                        delete localStreams.video;
+                                    }
+                                    localStreams.video = stream;
+
+                                    if(!mixerStream) {
+                                        mixerStream = AgoraRTC.createStream({
+                                            audio: false,
+
+                                            video: true,
+                                            cameraId: videoSelect.value,
+                                            mirror: true,
+                                        });
+                                        mixerStreams.push(mixerStream);
+
+                                        mixerStream.init(() => {
+                                            if(mixerClient)
+                                                mixerClient.publish(mixerStream, error => console.error(error));
+                                            
+                                            addInput(mixerStream);
+                                            
+                                            if(window.mixerView)
+                                                mixerView.setStreamId(mixerStream.getId());
+
+                                        }, error => console.error(error));
+                                    }
+                                    else {
+                                        mixerStream.switchDevice('video', videoSelect.value, () => {
+
+                                        }, error => {
+                                            console.error(error);
+                                        });
+                                    }
+                                });
+                        });
+    
+                        const audioSelect = document.querySelector(`#audioSelect`);
+                        audioSelect.addEventListener('change', event => {
+                            let deviceId = event.target.value;
+                            if(deviceId == '')
+                                deviceId = true;
+
+                            navigator.mediaDevices.getUserMedia({audio: {deviceId}})
+                                .then(stream => {
+                                    if(localStreams.audio) {
+                                        streamMixer.removeStream(localStreams.audio);
+                                        stopStream(localStreams.audio);
+                                        delete localStreams.audio;
+                                    }
+
+                                    streamMixer.addStream(stream);
+                                    streamMixer.setGain(stream, 1);
+                                    localStreams.audio = stream;
+                                });
+                        });
+
+                        const testAudioButton = document.querySelector('button#testAudio');
+
+                    </script>
+                </div>
+
+                <script data-script='mediaDevices'>
+                    const stopStream = stream => stream.getTracks().forEach(track => track.stop());
+                    const getCameraAccess = () => navigator.mediaDevices.getUserMedia({video: true, audio: true}).then(stream => stopStream(stream));
+
+                    let updatingdevices = false;
+                    const ondevicechange = () => {
+                        if(updatingdevices) return;
+                        updatingdevices = true;
+
+                        videoSelect.innerHTML = audioSelect.innerHTML = '';
+
+                        return navigator.mediaDevices.enumerateDevices().then(devices => devices.filter(device => device.kind.includes('input'))).then(outputDevices => {
+                            outputDevices.forEach(device => {
+                                const {kind, deviceId, label} = device;
+                                const option = new Option(label, deviceId);
+                                const select = kind.includes('video')? videoSelect:audioSelect;
+                                select.appendChild(option);
+                            });
+                        }).then(() => {
+                            if(!localStreams.video) {
+                                videoSelect.dispatchEvent(new Event('change'));
+                            }
+
+                            if(!localStreams.audio) {
+                                audioSelect.dispatchEvent(new Event('change'));
+                            }
+
+                            updatingdevices = false;
+                        });
+                    }
+                    navigator.mediaDevices.addEventListener('devicechange', () => ondevicechange());
+                    document.addEventListener('click', event => getCameraAccess().then(() => ondevicechange()), {once: true});
+                </script>
+
+                <!--
+                <style>
+                    #inputVideos {
+                        display: none;
+                        /* display: grid; */
+                        justify-content: center; align-items: center;
+                        grid-auto-flow: dense;
+                        flex: 1;
+                        max-width: inherit; max-height: inherit;
+                    }
+
+                    @media (min-aspect-ratio: 3/2) {#inputVideos {width: 100%}}
+                    @media (max-aspect-ratio: 3/2) {#inputVideos {height: 100%}}
+
+                    #inputVideos .inputVideo {
+                        object-fit: contain;
+                        width: 100%; height: 100%;
+                    }
+
+                    #inputVideos .inputVideo video {
+                        width: 100%; height: 100%;
+                        object-fit: contain;
+                    }
+                </style>
+
+                <div id='inputVideos'>
+                    <template>
+                        <div class='inputVideo'>
+                            <video width='100' height='100' autoplay playsinline muted></video>
+                        </div>
+                    </template>
+                </div>
+                -->
+
+                <script data-script='inputVideos'>
+                    //const inputVideos = document.querySelector('#inputVideos');
+                    //const inputVideoTemplate = inputVideos.querySelector('template');
+
+                    const addInput = (stream) => {
+                        //const inputVideo = inputVideoTemplate.content.cloneNode(true).querySelector('.inputVideo');
+                        //const video = inputVideo.querySelector('video');
+                        //video.srcObject = stream.stream;
+
+                        if(stream !== mixerStream)
+                            mixerStreams.push(stream);
+
+                        /*
+                        video.addEventListener('click', event => {
+                            streamMixer.soloVideo(stream.stream);
+                        });
+                        */
+
+                        streamMixer.addStream(stream.stream);
+                        streamMixer.setAlpha(stream.stream, 1);
+                        streamMixer.soloVideo(stream.stream);
+                        if(mixerView)
+                            mixerView.setStreamId(stream.getId());
+
+                        const removeInput = () => {
+                            if(stream == mixerStream) return;
+
+                            if(mixerStreams.includes(stream))
+                                mixerStreams.splice(mixerStreams.indexOf(stream), 1);
+
+                            //inputVideo.remove();
+                            streamMixer.removeStream(stream.stream);
+
+                            if(streamMixer.videoInputs.every(videoInput => videoInput.isVideoMuted)) {
+                                const videoInput = streamMixer.videoInputs[0];
+                                if(videoInput)
+                                    videoInput.unmuteVideo();
+                            }
+
+                            window.dispatchEvent(new Event('resize'));
+                        }
+                        
+                        stream.stream.oninactive = () => removeInput();
+
+                        //inputVideos.appendChild(inputVideo);
+
+                        window.dispatchEvent(new Event('resize'));
+                    };
+                </script>
+
+                <script data-script='mixerClient'>
+                    const mixerChannelName = Math.random().toString().split('.')[1].substr(0, 4);
+                    const mixerStreams = [];
+
+                    const mixerClient = AgoraRTC.createClient({mode: 'rtc', codec: 'vp8'});
+
+                    mixerClient.init(appID, () => {
+                        mixerClient.join(null, mixerChannelName, null, id => {
+                            
+                        });
+                    });
+
+                    mixerClient.on('stream-added', event => mixerClient.subscribe(event.stream));
+                    mixerClient.on('stream-subscribed', event => addInput(event.stream));
+                    mixerClient.on('peer-leave', event => {
+                        if(!MediaStream.prototype.hasOwnProperty('onpeerinactive')) {
+                            const id = event.uid;
+                            const stream = mixerStreams.find(stream => stream.getId() == id);
+                            if(stream)
+                                stream.stream.oninactive();
+                        } 
+                    });
+                </script>
+
+                <script data-script='inputVideosResize'>
+                    /*
+                    window.addEventListener('resize', event => {
+                        let {width} = window.getComputedStyle(inputVideos);
+                        let {height} = window.getComputedStyle(inputVideos);
+
+                        width = Number(width.replace('px', ''));
+                        height = Number(height.replace('px', ''));
+
+                        const aspectRatio = width/height;
+
+                        let rows = 1;
+                        let columns = 1;
+
+                        let gridTemplateColumns = ``;
+                        let gridTemplateRows = ``;
+
+                        const numberOfInputs = inputVideos.querySelectorAll('.inputVideo:not(template)').length;
+
+                        while(numberOfInputs > rows*columns) {
+                            const aspectRatios = {
+                                row : Math.abs(aspectRatio - columns/(rows+1)),
+                                column : Math.abs(aspectRatio - (columns+1)/rows),
+                            };
+
+                            if(aspectRatios.row < aspectRatios.column)
+                                rows++
+                            else
+                                columns++;
+                        }
+
+                        gridTemplateColumns = `repeat(${columns}, 1fr)`;
+                        gridTemplateRows = `repeat(${rows}, 1fr)`;
+
+                        const length = Math.floor(Math.min(width/columns, height/rows));
+                        const lengthString = `${length}px`;
+                        //gridTemplateColumns = gridTemplateColumns.replace(/1fr/g, lengthString);
+                        //gridTemplateRows = gridTemplateRows.replace(/1fr/g, lengthString);
+                        
+                        inputVideos.style.gridTemplateRows = gridTemplateRows;
+                        inputVideos.style.gridTemplateColumns = gridTemplateColumns;
+                    });
+
+                    window.dispatchEvent(new Event('resize'));
+                    */
+                </script>
+
+                <script data-script='croquet'>
+                    class MixerModel extends Croquet.Model {
+                        init({channelName, mixerChannelName}) {
+                            super.init();
+                            this.streamId = null;
+
+                            this.mirror = {};
+
+                            this.channelName = channelName;
+                            this.mixerChannelName = mixerChannelName;
+                            
+                            this.length = 200;
+
+                            this.subscribe(this.sessionId, 'setMirror', this.setMirror);
+                            this.subscribe(this.sessionId, 'setStreamId', this.setStreamId);
+                            this.subscribe(this.sessionId, 'setLength', this.setLength);
+                        }
+
+                        setStreamId({streamId}) {
+                            this.streamId = streamId;
+                            this.publish(this.sessionId, 'onUpdateStreamId');
+                        }
+
+                        setLength({length}) {
+                            this.length = length;
+                            this.publish(this.sessionId, 'onUpdateLength');
+                        }
+
+                        setMirror({streamId, mirror}) {
+                            if(streamId == undefined) return;
+
+                            this.mirror[streamId] = mirror;
+                            this.publish(this.sessionId, 'onUpdateMirror');
+                        }
+                    }
+                    MixerModel.register();
+
+                    class MixerView extends Croquet.View {
+                        constructor(model) {
+                            super(model);
+                            this.model = model;
+
+                            this.subscribe(this.sessionId, 'onUpdateStreamId', this.onUpdateStreamId);
+                            this.subscribe(this.sessionId, 'onUpdateMirror', this.onUpdateMirror);
+                            if(mixerStream)
+                                this.setStreamId(mixerStream.getId());
+                        }
+
+                        setStreamId(streamId) {
+                            this.publish(this.sessionId, 'setStreamId', {streamId});
+                        }
+
+                        setLength(length) {
+                            this.publish(this.sessionId, 'setLength', {length});
+                        }
+
+                        onUpdateStreamId() {
+                            const _mixerStream = mixerStreams.find(mixerStream => mixerStream.getId() == this.model.streamId);
+                            const currentVideoInput = streamMixer.videoInputs.find(videoInput => !videoInput.isVideoMuted);
+                            if(_mixerStream && currentVideoInput && _mixerStream.stream !== currentVideoInput.stream) {
+                                streamMixer.soloVideo(_mixerStream.stream);
+                            }
+                            this.onUpdateMirror();
+                        }
+
+                        onUpdateMirror() {
+                            const mirror = this.model.mirror[this.model.streamId];
+                            const ui = document.querySelector('#ui');
+
+                            if(mirror == undefined || mirror == true)
+                                ui.dataset.mirror = '';
+                            else
+                                ui.removeAttribute('data-mirror');
+                        }
+                    }
+
+                    Croquet.App.root = false;
+                    Croquet.startSession(`agora.io-mixer`, MixerModel, MixerView, {options: {channelName, mixerChannelName}})
+                        .then(session => {
+                            const {view} = session;
+                            mixerView = view;
+                        });
+                </script>
+
+            </div>
+
+            <script data-script='controls'>
+                const controls = document.querySelector('#controls');
+            </script>
+        </div>
+
+        <style>
+            #qrcode {
+                position: absolute;
+                left: 20;
+                top: 20;
+
+                z-index: 2;
+
+                display: none;
+                border: solid white 10px;
             }
+        </style>
 
-            onUpdateMirror() {
-                const camera = this.model.getCamera(videoSelect.value);
-                if(camera) {
-                    document.dispatchEvent(new CustomEvent('mirror', {
-                        detail : {mirror : camera.mirror},
-                    }));
-                }
-            }
+        <a id='qrcode' target='_blank'></a>
 
-            join() {
-                this.publish(this.sessionId, 'peer-join', this.viewId);
-            }
+        <script data-script='qrcode'>
+            const qrcode = document.querySelector('#qrcode');
 
-            get index() {
-                return this.model.getIndex(this.viewId);
-            }
-
-            get user() {
-                return this.model.getUser(this.viewId);
-            }
-
-            togglePresentationMode(presentationMode) {
-                this.publish(this.sessionId, 'set-presentation-mode', {
-                    presentationMode,
-                });
-            }
-        }
-
-        let view;
-        Croquet.App.root = false;
-        Croquet.startSession(`zakchat-${channelName}`, Model, UserView)
-            .then(session => {
-                view = session.view;
-                view.join();
+            const qrcodeURL = `https://${location.host}/c?c=${channelName}&m=${mixerChannelName}`;
+            new QRCode(qrcode, {
+                text: qrcodeURL,
+                width: 300,
+                height: 300,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H,
             });
-    </script>
+            qrcode.href = qrcodeURL;
+            qrcode.title = '';
+
+            document.addEventListener('click', event => {
+                if(qrcode.style.display == 'block' && event.target.id !== 'qrCodeToggle')
+                    toggleQRCode(true);
+            });
+
+            const toggleQRCode = (hidden) => {
+                if((hidden == undefined && qrcode.style.display == '') || hidden == false) {
+                    qrcode.style.display = 'block';
+                    qrCodeToggle.innerText = 'hide camera QR';
+                }
+                else if((hidden == undefined && qrcode.style.display == 'block') || hidden == true) {
+                    qrcode.style.display = '';
+                    qrCodeToggle.innerText = 'show camera QR';
+                }
+            }
+        </script>
+    </body>
 </html>
